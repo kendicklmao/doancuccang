@@ -8,4 +8,10 @@ taskRouter.get('/', controller.getTask);
 
 taskRouter.delete('/:id', controller.deleteTask);
 
+taskRouter.put('/:id', controller.updateTask);
+
+taskRouter.get('/:id', controller.getTaskById);
+
+taskRouter.put('/:id/move', controller.moveTask);
+
 module.exports = taskRouter;

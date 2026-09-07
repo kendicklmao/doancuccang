@@ -13,9 +13,19 @@ const taskSchema = new mongoose.Schema({
         ref: 'Column',
         required: true
     },
-    position: {
-        type: Number,
-        default: 0
+    priority: {
+        type: String,
+        enum: ['low', 'medium', 'high', 'urgent'],
+        default: 'medium'
+    },
+    date: {
+        type: Date,
+        default: Date.now
+    },
+    projectId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Project',
+        required: true
     }
 }, { timestamps: true });
 

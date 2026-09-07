@@ -8,6 +8,11 @@ const columnSchema = new mongoose.Schema({
     position: {
         type: Number,
         default: 0
+    },
+    projectId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Project',
+        required: true
     }
 }, { timestamps: true });
 
