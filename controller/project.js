@@ -1,9 +1,11 @@
+const User = require('./../model/user');
 const Project = require('./../model/project');
-const Column = require('./../model/Column');
+const Column = require('./../model/column');
+const Task = require('./../model/task');
 
 exports.getProject = async (req, res) => {
     try{
-        const projects = await Project.find()
+        const projects = await Project.find();
         res.json(projects);
     }
     catch(err){
@@ -50,13 +52,30 @@ exports.createProject = async (req, res) => {
 
 exports.deleteProject = async (req, res) => {
     try {
-        await Project.findByIdAndDelete(req.params.id);
-        res.json({ message: 'deleted' });
-    }
-    catch (err) {
+        const projectId = req.params.id;
+        const currentUserId = req.user.id;
+
+        const project = await Project.findOne({ _id: projectId, userId: currentUserId });
+        if (!project) {
+            return res.status(404).json({ message: 'Project not found or unauthorized' });
+        }
+
+        const columns = await Column.find({ projectId }).select('_id');
+        const columnIds = columns.map(col => col._id);
+
+        if (columnIds.length > 0) {
+            await Task.deleteMany({ columnId: { $in: columnIds } });
+
+            await Column.deleteMany({ projectId });
+        }
+
+        await Project.findByIdAndDelete(projectId);
+
+        res.json({ message: 'Project and all associated columns & tasks deleted successfully' });
+    } catch (err) {
         res.status(500).json({ error: err.message });
     }
-}
+};
 
 exports.updateProject = async (req, res) => {
     try {

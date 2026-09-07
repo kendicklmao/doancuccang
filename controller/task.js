@@ -1,4 +1,6 @@
-const Task = require('./../model/Task');
+const Task = require('./../model/task');
+const Column = require('./../model/column');
+const Project = require('./../model/project');
 
 exports.getTask = async (req, res) => {
     try {
@@ -30,26 +32,42 @@ exports.getTaskById = async (req, res) => {
 
 exports.createTask = async (req, res) => {
     try {
-        const { title, description, columnId, position } = req.body;
+        const { title, description, columnId, priority, date } = req.body;
+        const currentUserId = req.user.id;
 
-        let taskPosition = position;
-        if (taskPosition === undefined) {
-            const count = await Task.countDocuments({ columnId });
-            taskPosition = count;
+        if (!title || !title.trim()) {
+            return res.status(400).json({ message: 'Task title is required' });
+        }
+        if (!columnId) {
+            return res.status(400).json({ message: 'Please select a column' });
+        }
+
+        const column = await Column.findById(columnId);
+        if (!column) {
+            return res.status(404).json({ message: 'Selected column does not exist' });
+        }
+
+        const project = await Project.findOne({ _id: column.projectId, userId: currentUserId });
+        if (!project) {
+            return res.status(403).json({ message: 'Unauthorized: You do not own this project' });
         }
 
         const newTask = new Task({
-            title,
-            description,
+            title: title.trim(),
+            description: description || '',
             columnId,
-            position: taskPosition
+            priority: priority || 'Medium',
+            date: date
         });
 
         await newTask.save();
-        res.status(201).json(newTask);
-    }
-    catch (err) {
-        res.status(400).json({ error: err.message });
+
+        res.status(201).json({
+            message: 'Task created successfully',
+            task: newTask
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 };
 

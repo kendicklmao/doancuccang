@@ -1,6 +1,9 @@
 const User = require('./../model/user');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const Project = require('./../model/project');
+const Column = require('./../model/column');
+const Task = require('./../model/task');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'secretkey_kanban_123';
 
@@ -155,13 +158,38 @@ exports.updateUser = async (req, res) => {
 
 exports.deleteUser = async (req, res) => {
     try {
-        const deletedUser = await User.findByIdAndDelete(req.params.id);
-        if (!deletedUser) {
-            return res.status(404).json({ message: 'not found' });
+        const targetUserId = req.params.id;
+        const currentUserId = req.user.id;
+
+        if (targetUserId !== currentUserId) {
+            return res.status(403).json({ message: 'Access denied. You can only delete your own account.' });
         }
-        res.json({ message: 'deleted' });
-    }
-    catch (err) {
+
+        const user = await User.findById(targetUserId);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        const userProjects = await Project.find({ userId: targetUserId }).select('_id');
+        const projectIds = userProjects.map(project => project._id);
+
+        if (projectIds.length > 0) {
+            const projectColumns = await Column.find({ projectId: { $in: projectIds } }).select('_id');
+            const columnIds = projectColumns.map(column => column._id);
+
+            if (columnIds.length > 0) {
+                await Task.deleteMany({ columnId: { $in: columnIds } });
+
+                await Column.deleteMany({ projectId: { $in: projectIds } });
+            }
+
+            await Project.deleteMany({ userId: targetUserId });
+        }
+
+        await User.findByIdAndDelete(targetUserId);
+
+        res.json({ message: 'User and all associated projects, columns, and tasks deleted successfully' });
+    } catch (err) {
         res.status(500).json({ error: err.message });
     }
 };

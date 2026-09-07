@@ -5,11 +5,11 @@ const auth = require('../middleware/auth');
 
 projectRouter.post("/",auth, controller.createProject);
 
-projectRouter.get("/", controller.getProject);
+projectRouter.get("/", auth, controller.getProject);
 
-projectRouter.get("/:id", controller.getProjectById);
+projectRouter.get("/:id", auth, controller.getProjectById);
 
-projectRouter.delete("/:id", controller.deleteProject);
+projectRouter.delete("/:id",auth, controller.deleteProject);
 
 projectRouter.put("/:id",auth, controller.updateProject);
 

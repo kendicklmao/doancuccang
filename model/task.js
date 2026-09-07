@@ -21,6 +21,10 @@ const taskSchema = new mongoose.Schema({
     date: {
         type: Date,
         default: Date.now
+    },
+    position:{
+        type: Number,
+        default: 0
     }
 }, { timestamps: true });
 

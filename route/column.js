@@ -1,11 +1,12 @@
 const express = require("express");
 const columnRouter = express.Router();
 const controller = require("./../controller/column");
+const auth = require('../middleware/auth');
 
-columnRouter.post("/",controller.createColumn);
+columnRouter.post("/",auth, controller.createColumn);
 
-columnRouter.get("/", controller.getColumn);
+columnRouter.get("/", auth, controller.getColumn);
 
-columnRouter.get("/:id", controller.getColumnById);
+columnRouter.get("/:id", auth, controller.getColumnById);
 
 module.exports = columnRouter;
