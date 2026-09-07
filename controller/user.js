@@ -93,31 +93,63 @@ exports.getUserById = async (req, res) => {
 
 exports.updateUser = async (req, res) => {
     try {
-        const { username, avatar, password } = req.body;
-        const updateData = {};
+        const { username, email, password } = req.body;
+        const userId = req.params.id;
 
-        if (username) updateData.username = username;
-        if (avatar) updateData.avatar = avatar;
+        const currentUser = await User.findById(userId);
+        if (!currentUser) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        const updateData = {};
+        let hasAnyChange = false;
+
+        if (username !== undefined) {
+            const cleanUsername = username.trim();
+            if (cleanUsername !== currentUser.username) {
+                const existingUser = await User.findOne({ username: cleanUsername, _id: { $ne: userId } });
+                if (existingUser) {
+                    return res.status(400).json({ message: 'Username already taken' });
+                }
+                updateData.username = cleanUsername;
+                hasAnyChange = true;
+            }
+        }
+
+        if (email !== undefined) {
+            const cleanEmail = email.trim().toLowerCase();
+            if (cleanEmail !== currentUser.email) {
+                const existingEmail = await User.findOne({ email: cleanEmail, _id: { $ne: userId } });
+                if (existingEmail) {
+                    return res.status(400).json({ message: 'Email already in use' });
+                }
+                updateData.email = cleanEmail;
+                hasAnyChange = true;
+            }
+        }
 
         if (password) {
-            const salt = await bcrypt.genSalt(10);
-            updateData.password = await bcrypt.hash(password, salt);
+            const isSamePassword = await bcrypt.compare(password, currentUser.password);
+            if (!isSamePassword) {
+                const salt = await bcrypt.genSalt(10);
+                updateData.password = await bcrypt.hash(password, salt);
+                hasAnyChange = true;
+            }
+        }
+
+        if (!hasAnyChange) {
+            return res.status(400).json({ message: 'No changes detected' });
         }
 
         const updatedUser = await User.findByIdAndUpdate(
-            req.params.id,
+            userId,
             updateData,
             { new: true, runValidators: true }
         ).select('-password');
 
-        if (!updatedUser) {
-            return res.status(404).json({ message: 'not found' });
-        }
-
-        res.json({ message: 'updated', user: updatedUser });
-    }
-    catch (err) {
-        res.status(400).json({ error: err.message });
+        res.json({ message: 'User updated successfully', user: updatedUser });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 };
 
