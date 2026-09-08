@@ -150,3 +150,120 @@ exports.getProjectById = async (req, res) => {
     }
 }
 
+exports.addProjectAssignee = async (req, res) => {
+    try {
+        const { projectId } = req.params;
+        const { memberUserId } = req.body;
+        const currentUserId = req.user.id;
+
+        const project = await Project.findOne({ _id: projectId, userId: currentUserId });
+        if (!project) {
+            return res.status(403).json({ message: 'Unauthorized or Project not found' });
+        }
+
+        await Project.findByIdAndUpdate(projectId, {
+            $addToSet: { assignees: memberUserId }
+        });
+
+        res.json({ message: 'Member added to project successfully' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+exports.getProjectAssignees = async (req, res) => {
+    try {
+        const { id } = req.params; // projectId
+        const currentUserId = req.user.id;
+
+        const project = await Project.findById(id)
+            .populate('userId', '_id username email avatar')
+            .populate('assignees', '_id username email avatar');
+
+        if (!project) {
+            return res.status(404).json({ message: 'Project not found' });
+        }
+
+        const isOwner = project.userId._id.toString() === currentUserId;
+        const isMember = project.assignees.some(member => member._id.toString() === currentUserId);
+
+        if (!isOwner && !isMember) {
+            return res.status(403).json({ message: 'Unauthorized to view this project members' });
+        }
+
+        const memberMap = new Map();
+
+        if (project.userId) {
+            memberMap.set(project.userId._id.toString(), {
+                _id: project.userId._id,
+                username: project.userId.username,
+                email: project.userId.email,
+                avatar: project.userId.avatar,
+                roleInProject: 'Owner'
+            });
+        }
+
+        project.assignees.forEach(member => {
+            if (!memberMap.has(member._id.toString())) {
+                memberMap.set(member._id.toString(), {
+                    _id: member._id,
+                    username: member.username,
+                    email: member.email,
+                    avatar: member.avatar,
+                    roleInProject: 'Member'
+                });
+            }
+        });
+
+        const membersList = Array.from(memberMap.values());
+
+        res.json({
+            success: true,
+            total: membersList.length,
+            assignees: membersList
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+exports.removeProjectAssignee = async (req, res) => {
+    try {
+        const { id: projectId, memberUserId } = req.params;
+        const currentUserId = req.user.id;
+
+        const project = await Project.findOne({ _id: projectId, userId: currentUserId });
+        if (!project) {
+            return res.status(403).json({ message: 'Unauthorized or Project not found' });
+        }
+
+        if (memberUserId === currentUserId) {
+            return res.status(400).json({ message: 'Cannot remove the project owner' });
+        }
+
+        const updatedProject = await Project.findByIdAndUpdate(
+            projectId,
+            { $pull: { assignees: memberUserId } },
+            { new: true }
+        );
+
+        const columns = await Column.find({ projectId }).select('_id');
+        const columnIds = columns.map(col => col._id);
+
+        if (columnIds.length > 0) {
+            await Task.updateMany(
+                { columnId: { $in: columnIds } },
+                { $pull: { assignees: memberUserId } }
+            );
+        }
+
+        res.json({
+            message: 'Member removed from project and associated tasks successfully',
+            project: updatedProject
+        });
+    }
+    catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+

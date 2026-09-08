@@ -13,4 +13,8 @@ projectRouter.delete("/:id",auth, controller.deleteProject);
 
 projectRouter.put("/:id",auth, controller.updateProject);
 
+projectRouter.get("/:id/assignees", auth, controller.getProjectAssignees);
+
+projectRouter.delete("/:id/assignees/:memberUserId", auth, controller.removeProjectAssignee);
+
 module.exports = projectRouter;

@@ -32,7 +32,7 @@ exports.getTaskById = async (req, res) => {
 
 exports.createTask = async (req, res) => {
     try {
-        const { title, description, columnId, priority, date } = req.body;
+        const { title, description, columnId, assignees, priority, date } = req.body;
         const currentUserId = req.user.id;
 
         if (!title || !title.trim()) {
@@ -52,12 +52,28 @@ exports.createTask = async (req, res) => {
             return res.status(403).json({ message: 'Unauthorized: You do not own this project' });
         }
 
+        const taskAssignees = Array.isArray(assignees) ? assignees : [];
+        if (taskAssignees.length > 0) {
+            const validProjectMembers = [
+                project.userId.toString(),
+                ...(project.assignees || []).map(id => id.toString())
+            ];
+
+            const isValid = taskAssignees.every(memberId => validProjectMembers.includes(memberId.toString()));
+            if (!isValid) {
+                return res.status(400).json({
+                    message: 'Some assignees do not belong to this project'
+                });
+            }
+        }
+
         const newTask = new Task({
             title: title.trim(),
             description: description || '',
             columnId,
+            assignees: taskAssignees,
             priority: priority || 'Medium',
-            date: date
+            date: date || null
         });
 
         await newTask.save();
@@ -73,32 +89,51 @@ exports.createTask = async (req, res) => {
 
 exports.updateTask = async (req, res) => {
     try {
+        const taskId = req.params.id;
+        const currentUserId = req.user.id;
+
+        const task = await Task.findById(taskId);
+        if (!task) {
+            return res.status(404).json({ message: 'Task not found' });
+        }
+
+        const column = await Column.findById(task.columnId);
+        const project = await Project.findOne({ _id: column.projectId, userId: currentUserId });
+        if (!project) {
+            return res.status(403).json({ message: 'Unauthorized to update this task' });
+        }
+
         const updatedTask = await Task.findByIdAndUpdate(
-            req.params.id,
+            taskId,
             req.body,
             { new: true, runValidators: true }
         );
 
-        if (!updatedTask) {
-            return res.status(404).json({ message: 'not found' });
-        }
-
         res.json(updatedTask);
-    }
-    catch (err) {
-        res.status(400).json({ error: err.message });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 };
 
 exports.deleteTask = async (req, res) => {
     try {
-        const deletedTask = await Task.findByIdAndDelete(req.params.id);
-        if (!deletedTask) {
-            return res.status(404).json({ message: 'not found' });
+        const taskId = req.params.id;
+        const currentUserId = req.user.id;
+
+        const task = await Task.findById(taskId);
+        if (!task) {
+            return res.status(404).json({ message: 'Task not found' });
         }
-        res.json({ message: 'deleted', id: req.params.id });
-    }
-    catch (err) {
+
+        const column = await Column.findById(task.columnId);
+        const project = await Project.findOne({ _id: column.projectId, userId: currentUserId });
+        if (!project) {
+            return res.status(403).json({ message: 'Unauthorized to delete this task' });
+        }
+
+        await Task.findByIdAndDelete(taskId);
+        res.json({ message: 'Task deleted successfully', id: taskId });
+    } catch (err) {
         res.status(500).json({ error: err.message });
     }
 };
@@ -107,19 +142,25 @@ exports.moveTask = async (req, res) => {
     try {
         const { id } = req.params;
         const { columnId, position } = req.body;
+        const currentUserId = req.user.id;
 
         const task = await Task.findById(id);
         if (!task) {
-            return res.status(404).json({ message: 'Không tìm thấy task!' });
+            return res.status(404).json({ message: 'Task not found' });
         }
 
-        task.columnId = columnId !== undefined ? columnId : task.columnId;
-        task.position = position !== undefined ? position : task.position;
+        const column = await Column.findById(task.columnId);
+        const project = await Project.findOne({ _id: column.projectId, userId: currentUserId });
+        if (!project) {
+            return res.status(403).json({ message: 'Unauthorized to move this task' });
+        }
+
+        if (columnId !== undefined) task.columnId = columnId;
+        if (position !== undefined) task.position = position;
 
         await task.save();
-        res.json({ message: 'updated', task });
-    }
-    catch (err) {
+        res.json({ message: 'Task moved successfully', task });
+    } catch (err) {
         res.status(500).json({ error: err.message });
     }
 };
