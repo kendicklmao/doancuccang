@@ -15,7 +15,7 @@ exports.getProject = async (req, res) => {
 
 exports.createProject = async (req, res) => {
     try {
-        const { name, description, color, date } = req.body;
+        const { name, description, color, date, assignees } = req.body;
         const userId = req.user.id;
 
         if (!name || !name.trim()) {
@@ -27,7 +27,8 @@ exports.createProject = async (req, res) => {
             description,
             color,
             date,
-            userId
+            userId,
+            assignees
         });
         await newProject.save();
 
