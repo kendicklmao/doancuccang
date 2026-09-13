@@ -30,6 +30,19 @@ exports.getTaskById = async (req, res) => {
     }
 };
 
+exports.getTasksByProject = async (req, res) => {
+    try {
+        const { projectId } = req.query;
+
+        const filter = projectId ? { projectId } : {};
+        const tasks = await Task.find(filter).populate('assignee', 'username email');
+
+        res.status(200).json(tasks);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
 exports.createTask = async (req, res) => {
     try {
         const { title, description, columnId, assignees, priority, date } = req.body;
