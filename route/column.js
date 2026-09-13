@@ -9,4 +9,6 @@ columnRouter.get("/", auth, controller.getColumn);
 
 columnRouter.get("/:id", auth, controller.getColumnById);
 
+columnRouter.get("/project/:projectId", auth, controller.getColumnsByProject);
+
 module.exports = columnRouter;

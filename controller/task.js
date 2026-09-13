@@ -35,7 +35,7 @@ exports.getTasksByProject = async (req, res) => {
         const { projectId } = req.query;
 
         const filter = projectId ? { projectId } : {};
-        const tasks = await Task.find(filter).populate('assignee', 'username email');
+        const tasks = await Task.find(filter).populate('assignees', 'username email');
 
         res.status(200).json(tasks);
     } catch (error) {
