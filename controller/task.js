@@ -30,12 +30,30 @@ exports.getTaskById = async (req, res) => {
     }
 };
 
+// 🟢 LẤY TẤT CẢ TASK CỦA 1 PROJECT DỰA VÀO COLUMN
 exports.getTasksByProject = async (req, res) => {
     try {
-        const { projectId } = req.query;
+        // Hỗ trợ lấy projectId từ req.query hoặc req.params
+        const projectId = req.query.projectId || req.params.projectId || req.params.id;
 
-        const filter = projectId ? { projectId } : {};
-        const tasks = await Task.find(filter).populate('assignees', 'username email').populate("columnId");
+        if (!projectId) {
+            return res.status(400).json({ message: 'Thiếu projectId' });
+        }
+
+        // BƯỚC 1: Tìm tất cả Column thuộc Project này
+        const columns = await Column.find({ projectId }).select('_id name position');
+
+        if (!columns || columns.length === 0) {
+            return res.status(200).json([]); // Project chưa có cột nào -> Trả về mảng rỗng
+        }
+
+        // Lấy danh sách ID các cột thuộc project
+        const columnIds = columns.map(col => col._id);
+
+        // BƯỚC 2: Tìm tất cả Task nằm trong các Cột đó
+        const tasks = await Task.find({ columnId: { $in: columnIds } })
+            .populate('assignees', 'username email')
+            .populate('columnId', 'name position projectId'); // Populate thông tin cột để frontend dễ đếm
 
         res.status(200).json(tasks);
     } catch (error) {
@@ -43,19 +61,31 @@ exports.getTasksByProject = async (req, res) => {
     }
 };
 
+// 🟢 TẠO TASK MỚI
 exports.createTask = async (req, res) => {
     try {
-        const { title, description, columnId, assignees, priority, date } = req.body;
+        const { title, description, columnId, projectId, assignees, priority, date } = req.body;
         const currentUserId = req.user.id;
 
         if (!title || !title.trim()) {
             return res.status(400).json({ message: 'Task title is required' });
         }
-        if (!columnId) {
+
+        let targetColumnId = columnId;
+
+        // Nếu Frontend chỉ gửi projectId mà không gửi columnId, tự tìm cột đầu tiên (VD: cột To do)
+        if (!targetColumnId && projectId) {
+            const firstColumn = await Column.findOne({ projectId }).sort('position');
+            if (firstColumn) {
+                targetColumnId = firstColumn._id;
+            }
+        }
+
+        if (!targetColumnId) {
             return res.status(400).json({ message: 'Please select a column' });
         }
 
-        const column = await Column.findById(columnId);
+        const column = await Column.findById(targetColumnId);
         if (!column) {
             return res.status(404).json({ message: 'Selected column does not exist' });
         }
@@ -66,30 +96,21 @@ exports.createTask = async (req, res) => {
         }
 
         const taskAssignees = Array.isArray(assignees) ? assignees : [];
-        if (taskAssignees.length > 0) {
-            const validProjectMembers = [
-                project.userId.toString(),
-                ...(project.assignees || []).map(id => id.toString())
-            ];
-
-            const isValid = taskAssignees.every(memberId => validProjectMembers.includes(memberId.toString()));
-            if (!isValid) {
-                return res.status(400).json({
-                    message: 'Some assignees do not belong to this project'
-                });
-            }
-        }
 
         const newTask = new Task({
             title: title.trim(),
             description: description || '',
-            columnId,
+            columnId: targetColumnId,
             assignees: taskAssignees,
             priority: priority || 'Medium',
             date: date || null
         });
 
         await newTask.save();
+
+        // Cập nhật danh sách ID task trong Column
+        column.taskOrderIds.push(newTask._id);
+        await column.save();
 
         res.status(201).json({
             message: 'Task created successfully',
@@ -145,6 +166,13 @@ exports.deleteTask = async (req, res) => {
         }
 
         await Task.findByIdAndDelete(taskId);
+
+        // Xóa ID task khỏi Column
+        if (column) {
+            column.taskOrderIds = column.taskOrderIds.filter(id => id.toString() !== taskId);
+            await column.save();
+        }
+
         res.json({ message: 'Task deleted successfully', id: taskId });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -157,11 +185,9 @@ exports.moveTask = async (req, res) => {
         const currentUserId = req.user.id;
         const { sourceColumnId, destColumnId, destinationIndex } = req.body;
 
-        // 1. Kiểm tra Task
         const task = await Task.findById(taskId);
         if (!task) return res.status(404).json({ message: 'Task không tồn tại' });
 
-        // 2. Kiểm tra Cột nguồn & Cột đích
         const sourceCol = await Column.findById(sourceColumnId);
         const destCol = await Column.findById(destColumnId);
 
@@ -169,31 +195,22 @@ exports.moveTask = async (req, res) => {
             return res.status(400).json({ message: 'Cột nguồn hoặc cột đích không hợp lệ' });
         }
 
-        // 3. Kiểm tra quyền sở hữu Project
         const project = await Project.findOne({ _id: sourceCol.projectId, userId: currentUserId });
         if (!project) {
             return res.status(403).json({ message: 'Bạn không có quyền thực hiện thao tác này' });
         }
 
-        // TH 1: Kéo thả trong CÙNG 1 CỘT
         if (sourceColumnId === destColumnId) {
-            // Xóa ID khỏi vị trí cũ
             sourceCol.taskOrderIds = sourceCol.taskOrderIds.filter(id => id.toString() !== taskId);
-            // Chèn ID vào vị trí index mới
             sourceCol.taskOrderIds.splice(destinationIndex, 0, taskId);
             await sourceCol.save();
-        }
-        // TH 2: Kéo thả SANG CỘT KHÁC
-        else {
-            // Xóa ID khỏi cột cũ
+        } else {
             sourceCol.taskOrderIds = sourceCol.taskOrderIds.filter(id => id.toString() !== taskId);
             await sourceCol.save();
 
-            // Chèn ID vào cột mới tại vị trí index chỉ định
             destCol.taskOrderIds.splice(destinationIndex, 0, taskId);
             await destCol.save();
 
-            // Cập nhật lại columnId cho Task
             task.columnId = destColumnId;
             await task.save();
         }
