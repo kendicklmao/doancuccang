@@ -200,22 +200,41 @@ exports.moveTask = async (req, res) => {
             return res.status(403).json({ message: 'Bạn không có quyền thực hiện thao tác này' });
         }
 
+        // Kéo thả TRONG CÙNG 1 CỘT
         if (sourceColumnId === destColumnId) {
-            sourceCol.taskOrderIds = sourceCol.taskOrderIds.filter(id => id.toString() !== taskId);
-            sourceCol.taskOrderIds.splice(destinationIndex, 0, taskId);
+            // Lọc ra mảng chuỗi để thao tác splice chính xác
+            const currentOrder = sourceCol.taskOrderIds.map(id => id.toString());
+
+            // Xóa taskId cũ khỏi vị trí ban đầu
+            const filteredOrder = currentOrder.filter(id => id !== taskId.toString());
+
+            // Chèn taskId vào vị trí mới
+            filteredOrder.splice(destinationIndex, 0, taskId);
+
+            sourceCol.taskOrderIds = filteredOrder;
             await sourceCol.save();
-        } else {
-            sourceCol.taskOrderIds = sourceCol.taskOrderIds.filter(id => id.toString() !== taskId);
+        }
+        // Kéo thả SANG CỘT KHÁC
+        else {
+            sourceCol.taskOrderIds = sourceCol.taskOrderIds.filter(id => id.toString() !== taskId.toString());
             await sourceCol.save();
 
-            destCol.taskOrderIds.splice(destinationIndex, 0, taskId);
+            const destOrder = destCol.taskOrderIds.map(id => id.toString());
+            destOrder.splice(destinationIndex, 0, taskId);
+
+            destCol.taskOrderIds = destOrder;
             await destCol.save();
 
             task.columnId = destColumnId;
             await task.save();
         }
 
-        return res.status(200).json({ message: 'Cập nhật vị trí thành công', taskId, destColumnId });
+        return res.status(200).json({
+            message: 'Cập nhật vị trí thành công',
+            taskId,
+            destColumnId,
+            taskOrderIds: sourceColumnId === destColumnId ? sourceCol.taskOrderIds : destCol.taskOrderIds
+        });
     } catch (err) {
         return res.status(500).json({ error: err.message });
     }
