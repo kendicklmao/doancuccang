@@ -35,7 +35,7 @@ exports.getTasksByProject = async (req, res) => {
         const { projectId } = req.query;
 
         const filter = projectId ? { projectId } : {};
-        const tasks = await Task.find(filter).populate('assignees', 'username email');
+        const tasks = await Task.find(filter).populate('assignees', 'username email').populate("columnId");
 
         res.status(200).json(tasks);
     } catch (error) {
@@ -153,27 +153,53 @@ exports.deleteTask = async (req, res) => {
 
 exports.moveTask = async (req, res) => {
     try {
-        const { id } = req.params;
-        const { columnId, position } = req.body;
+        const taskId = req.params.id;
         const currentUserId = req.user.id;
+        const { sourceColumnId, destColumnId, destinationIndex } = req.body;
 
-        const task = await Task.findById(id);
-        if (!task) {
-            return res.status(404).json({ message: 'Task not found' });
+        // 1. Kiểm tra Task
+        const task = await Task.findById(taskId);
+        if (!task) return res.status(404).json({ message: 'Task không tồn tại' });
+
+        // 2. Kiểm tra Cột nguồn & Cột đích
+        const sourceCol = await Column.findById(sourceColumnId);
+        const destCol = await Column.findById(destColumnId);
+
+        if (!sourceCol || !destCol) {
+            return res.status(400).json({ message: 'Cột nguồn hoặc cột đích không hợp lệ' });
         }
 
-        const column = await Column.findById(task.columnId);
-        const project = await Project.findOne({ _id: column.projectId, userId: currentUserId });
+        // 3. Kiểm tra quyền sở hữu Project
+        const project = await Project.findOne({ _id: sourceCol.projectId, userId: currentUserId });
         if (!project) {
-            return res.status(403).json({ message: 'Unauthorized to move this task' });
+            return res.status(403).json({ message: 'Bạn không có quyền thực hiện thao tác này' });
         }
 
-        if (columnId !== undefined) task.columnId = columnId;
-        if (position !== undefined) task.position = position;
+        // TH 1: Kéo thả trong CÙNG 1 CỘT
+        if (sourceColumnId === destColumnId) {
+            // Xóa ID khỏi vị trí cũ
+            sourceCol.taskOrderIds = sourceCol.taskOrderIds.filter(id => id.toString() !== taskId);
+            // Chèn ID vào vị trí index mới
+            sourceCol.taskOrderIds.splice(destinationIndex, 0, taskId);
+            await sourceCol.save();
+        }
+        // TH 2: Kéo thả SANG CỘT KHÁC
+        else {
+            // Xóa ID khỏi cột cũ
+            sourceCol.taskOrderIds = sourceCol.taskOrderIds.filter(id => id.toString() !== taskId);
+            await sourceCol.save();
 
-        await task.save();
-        res.json({ message: 'Task moved successfully', task });
+            // Chèn ID vào cột mới tại vị trí index chỉ định
+            destCol.taskOrderIds.splice(destinationIndex, 0, taskId);
+            await destCol.save();
+
+            // Cập nhật lại columnId cho Task
+            task.columnId = destColumnId;
+            await task.save();
+        }
+
+        return res.status(200).json({ message: 'Cập nhật vị trí thành công', taskId, destColumnId });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: err.message });
     }
 };
