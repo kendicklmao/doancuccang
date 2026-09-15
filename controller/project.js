@@ -140,19 +140,19 @@ exports.updateProject = async (req, res) => {
 };
 
 exports.getProjectById = async (req, res) => {
-    try{
-        const {id} = req.params;
-        const project = await Project.findById(id);
+    try {
+        const project = await Project.findById(req.params.id)
+            .populate('assignees', 'username email');
+
         if (!project) {
-            return res.status(404).json({ message: 'not found' });
+            return res.status(404).json({ message: 'Project không tồn tại' });
         }
 
-        return res.status(200).json({ success: true, data: project });
+        res.json(project);
+    } catch (error) {
+        res.status(500).json({ message: 'Lỗi server', error: error.message });
     }
-    catch(err){
-        res.status(500).json({message: err.message});
-    }
-}
+};
 
 exports.addProjectAssignee = async (req, res) => {
     try {
