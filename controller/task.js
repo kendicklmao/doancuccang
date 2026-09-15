@@ -182,11 +182,16 @@ exports.deleteTask = async (req, res) => {
 exports.moveTask = async (req, res) => {
     try {
         const taskId = req.params.id;
-        const currentUserId = req.user.id;
         const { sourceColumnId, destColumnId, destinationIndex } = req.body;
+        const currentUserId = req.user.id; // Lấy ID của user đang đăng nhập
 
         const task = await Task.findById(taskId);
         if (!task) return res.status(404).json({ message: 'Task không tồn tại' });
+
+        const isAssignee = task.assignees.some(assigneeId => assigneeId.toString() === currentUserId);
+        if (!isAssignee) {
+            return res.status(403).json({ message: 'Chỉ người được phân công (assignee) mới có quyền di chuyển task này' });
+        }
 
         const sourceCol = await Column.findById(sourceColumnId);
         const destCol = await Column.findById(destColumnId);
@@ -195,20 +200,15 @@ exports.moveTask = async (req, res) => {
             return res.status(400).json({ message: 'Cột nguồn hoặc cột đích không hợp lệ' });
         }
 
-        const project = await Project.findOne({ _id: sourceCol.projectId, userId: currentUserId });
+        const project = await Project.findOne({ _id: sourceCol.projectId });
         if (!project) {
             return res.status(403).json({ message: 'Bạn không có quyền thực hiện thao tác này' });
         }
 
         // Kéo thả TRONG CÙNG 1 CỘT
         if (sourceColumnId === destColumnId) {
-            // Lọc ra mảng chuỗi để thao tác splice chính xác
             const currentOrder = sourceCol.taskOrderIds.map(id => id.toString());
-
-            // Xóa taskId cũ khỏi vị trí ban đầu
             const filteredOrder = currentOrder.filter(id => id !== taskId.toString());
-
-            // Chèn taskId vào vị trí mới
             filteredOrder.splice(destinationIndex, 0, taskId);
 
             sourceCol.taskOrderIds = filteredOrder;
