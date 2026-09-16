@@ -23,6 +23,10 @@ const userSchema = new mongoose.Schema({
         type: String,
         enum: ['Member', 'Admin', 'Leader'],
         default: 'Member'
+    },
+    position:{
+        type:String,
+        enum:['dev','tester','Manager '],
     }
 }, { timestamps: true });
 

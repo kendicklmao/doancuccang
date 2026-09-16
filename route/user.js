@@ -7,7 +7,7 @@ userRouter.post('/register', controller.register);
 
 userRouter.post('/login', controller.login);
 
-userRouter.get('/', auth, controller.getUsers);
+userRouter.get('/GetUsers', controller.getUsers);
 
 userRouter.delete('/:id', auth, controller.deleteUser);
 
