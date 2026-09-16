@@ -9,7 +9,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'secretkey_kanban_123';
 
 exports.register = async (req, res) => {
     try {
-        const { username, email, password , role} = req.body;
+        const { username, email, password , role, position} = req.body;
 
         const existingUser = await User.findOne({ $or: [{ email }, { username }] });
         if (existingUser) {
@@ -24,6 +24,7 @@ exports.register = async (req, res) => {
             email,
             password: hashedPassword,
             role: role,
+            position: position
         });
 
         await newUser.save();
@@ -97,7 +98,7 @@ exports.getUserById = async (req, res) => {
 
 exports.updateUser = async (req, res) => {
     try {
-        const { username, email, password } = req.body;
+        const { username, email, password, role } = req.body;
         const userId = req.params.id;
 
         const currentUser = await User.findById(userId);
@@ -119,6 +120,18 @@ exports.updateUser = async (req, res) => {
                 hasAnyChange = true;
             }
         }
+                    if (role !== undefined) {
+                const cleanRole = role.trim();
+                if (cleanRole !== currentUser.role) {
+                    // kiểm tra enum hợp lệ
+                    const allowedRoles = ["Member", "Admin", "Leader"];
+                    if (!allowedRoles.includes(cleanRole)) {
+                    return res.status(400).json({ message: "Invalid role" });
+                    }
+                    updateData.role = cleanRole;
+                    hasAnyChange = true;
+                }
+                }
 
         if (email !== undefined) {
             const cleanEmail = email.trim().toLowerCase();

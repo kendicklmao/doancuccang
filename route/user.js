@@ -11,7 +11,7 @@ userRouter.get('/GetUsers', controller.getUsers);
 
 userRouter.delete('/:id', auth, controller.deleteUser);
 
-userRouter.put('/:id', auth, controller.updateUser);
+userRouter.put('/updateUser/:id', controller.updateUser);
 
 userRouter.get('/:id', auth, controller.getUserById);
 
