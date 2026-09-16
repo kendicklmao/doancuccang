@@ -4,18 +4,21 @@ const Column = require('./../model/column');
 const Task = require('./../model/task');
 
 exports.getProject = async (req, res) => {
-    try{
-        const projects = await Project.find();
-        res.json(projects);
+    try {
+        const projects = await Project.find()
+            // Bắt buộc dòng này để MongoDB chuyển ID thành Object { _id, username, email }
+            .populate('assignees', 'username email role')
+            .sort({ createdAt: -1 });
+
+        res.status(200).json(projects);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
     }
-    catch(err){
-        res.status(500).json({message: err.message});
-    }
-}
+};
 
 exports.createProject = async (req, res) => {
     try {
-        const { name, description, color, date } = req.body;
+        const { name, description, color, date, assignees } = req.body;
         const userId = req.user.id;
 
         if (!name || !name.trim()) {
@@ -27,7 +30,8 @@ exports.createProject = async (req, res) => {
             description,
             color,
             date,
-            userId
+            userId,
+            assignees
         });
         await newProject.save();
 
@@ -136,19 +140,19 @@ exports.updateProject = async (req, res) => {
 };
 
 exports.getProjectById = async (req, res) => {
-    try{
-        const {id} = req.params;
-        const project = await Project.findById(id);
+    try {
+        const project = await Project.findById(req.params.id)
+            .populate('assignees', 'username email');
+
         if (!project) {
-            return res.status(404).json({ message: 'not found' });
+            return res.status(404).json({ message: 'Project không tồn tại' });
         }
 
-        return res.status(200).json({ success: true, data: project });
+        res.json(project);
+    } catch (error) {
+        res.status(500).json({ message: 'Lỗi server', error: error.message });
     }
-    catch(err){
-        res.status(500).json({message: err.message});
-    }
-}
+};
 
 exports.addProjectAssignee = async (req, res) => {
     try {

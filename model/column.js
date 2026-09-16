@@ -13,7 +13,8 @@ const columnSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Project',
         required: true
-    }
+    },
+    taskOrderIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Task' }]
 }, { timestamps: true });
 
 module.exports = mongoose.model('Column', columnSchema);

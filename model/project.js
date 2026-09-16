@@ -16,7 +16,7 @@ const projectSchema = new mongoose.Schema({
     },
     color: {
         type: String,
-        default: '##4f46e5'
+        default: '#4f46e5'
     },
     userId: {
         type: mongoose.Schema.Types.ObjectId,

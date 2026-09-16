@@ -11,6 +11,35 @@ exports.getColumn = async (req, res) => {
     }
 };
 
+exports.getColumnsByProject = async (req, res) => {
+    try {
+        // Lấy projectId từ req.params (VD: /api/columns/project/:projectId)
+        // Nếu truyền dạng query (/api/columns?projectId=...) thì đổi thành: req.query.projectId
+        const { projectId } = req.params;
+
+        if (!projectId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Thiếu projectId'
+            });
+        }
+
+        // Tìm tất cả column thuộc project và sắp xếp tăng dần theo position
+        const columns = await Column.find({ projectId }).sort({ position: 1 });
+
+        return res.status(200).json({
+            success: true,
+            data: columns
+        });
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: 'Lỗi server khi lấy danh sách cột',
+            error: error.message
+        });
+    }
+};
+
 exports.getColumnById = async (req, res) => {
     try {
         const column = await Column.findById(req.params.id);

@@ -15,4 +15,8 @@ taskRouter.get('/:id', auth, controller.getTaskById);
 
 taskRouter.put('/:id/move', auth, controller.moveTask);
 
+taskRouter.get('/project/:id', auth, controller.getTasksByProject);
+
+taskRouter.put("/:id/move", auth, controller.moveTask);
+
 module.exports = taskRouter;

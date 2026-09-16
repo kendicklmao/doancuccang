@@ -13,6 +13,10 @@ const taskSchema = new mongoose.Schema({
         ref: 'Column',
         required: true
     },
+    assignees: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    }],
     priority: {
         type: String,
         enum: ['Low', 'Medium', 'High', 'Urgent'],
