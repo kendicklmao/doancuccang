@@ -21,13 +21,13 @@ const userSchema = new mongoose.Schema({
     },
     role: {
         type: String,
-        enum: ['Member', 'Admin', 'Leader',"Manager"],
-        default: 'Member'
+        enum: ['User', 'Admin'],
+        default: 'User'
     },
-    position:{
-        type:String,
-        enum:['dev','tester','manager'],
-        default: 'dev'
+     status: {
+        type: String,
+        enum: ['active', 'banned'],
+        default: 'active'
     }
 }, { timestamps: true });
 
