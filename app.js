@@ -4,7 +4,7 @@ const app = express();
 const cors = require("cors");
 
 // Cho phép nhiều origin (ví dụ frontend chạy ở 5173 hoặc 5184)
-const allowedOrigins = ["http://localhost:5176", "http://localhost:5185"];
+const allowedOrigins = ["http://localhost:5173", "http://localhost:5185"];
 
 app.use(cors({
   origin: function (origin, callback) {
