@@ -9,7 +9,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'secretkey_kanban_123';
 
 exports.register = async (req, res) => {
     try {
-        const { username, email, password , role, position} = req.body;
+        const { username, email, password , role} = req.body;
 
         const existingUser = await User.findOne({ $or: [{ email }, { username }] });
         if (existingUser) {
@@ -24,7 +24,6 @@ exports.register = async (req, res) => {
             email,
             password: hashedPassword,
             role: role,
-            position: position
         });
 
         await newUser.save();
