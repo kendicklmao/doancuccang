@@ -239,3 +239,62 @@ exports.moveTask = async (req, res) => {
         return res.status(500).json({ error: err.message });
     }
 };
+
+exports.toggleChecklistItem = async (req, res) => {
+    try {
+        const { id, itemId } = req.params;
+
+        // 1. Tìm task để lấy trạng thái completed hiện tại của item
+        const task = await Task.findById(id);
+        if (!task) {
+            return res.status(404).json({ message: 'Task không tồn tại' });
+        }
+
+        // Tìm item theo _id hoặc index
+        const item = task.checklist.find((chk, idx) =>
+            String(chk._id) === String(itemId) || String(idx) === String(itemId)
+        );
+
+        if (!item) {
+            return res.status(404).json({ message: 'Không tìm thấy checklist item' });
+        }
+
+        // 2. Cập nhật trực tiếp xuống MongoDB bằng $set
+        const updatedTask = await Task.findOneAndUpdate(
+            { _id: id, "checklist._id": item._id },
+            { $set: { "checklist.$.completed": !item.completed } },
+            { new: true } // Trả về data mới nhất sau khi update
+        );
+
+        return res.status(200).json(updatedTask);
+    } catch (err) {
+        return res.status(500).json({ error: err.message });
+    }
+};
+
+exports.addChecklistItem = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { text } = req.body;
+
+        if (!text || !text.trim()) {
+            return res.status(400).json({ message: 'Nội dung checklist không được để trống' });
+        }
+
+        const task = await Task.findByIdAndUpdate(
+            id,
+            { $push: { checklist: { text: text.trim(), completed: false } } },
+            { new: true }
+        );
+
+        if (!task) {
+            return res.status(404).json({ message: 'Task không tồn tại' });
+        }
+
+        return res.status(200).json(task);
+    } catch (err) {
+        return res.status(500).json({ error: err.message });
+    }
+};
+
+

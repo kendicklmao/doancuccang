@@ -19,4 +19,8 @@ taskRouter.get('/project/:id', auth, controller.getTasksByProject);
 
 taskRouter.put("/:id/move", auth, controller.moveTask);
 
+taskRouter.post('/:id/checklist', auth, controller.addChecklistItem);
+
+taskRouter.post('/:id/checklist/:itemId', auth, controller.toggleChecklistItem);
+
 module.exports = taskRouter;
