@@ -297,4 +297,46 @@ exports.addChecklistItem = async (req, res) => {
     }
 };
 
+const Comment = require('../model/Comment');
+
+exports.getTaskComments = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const comments = await Comment.find({ taskId: id })
+            .populate('user', 'username email name') // Populate lấy thông tin người dùng
+            .sort({ createdAt: 1 }); // Sắp xếp cũ trước, mới sau
+
+        return res.status(200).json(comments);
+    } catch (err) {
+        return res.status(500).json({ error: err.message });
+    }
+};
+
+exports.addComment = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { text } = req.body;
+        const userId = req.user.id; // Lấy ID từ Middleware xác thực Auth
+
+        if (!text || !text.trim()) {
+            return res.status(400).json({ message: 'Nội dung bình luận không được để trống' });
+        }
+
+        const newComment = new Comment({
+            taskId: id,
+            user: userId,
+            text: text.trim()
+        });
+
+        await newComment.save();
+
+        // Populate thông tin user để trả về Frontend hiển thị ngay tên người dùng
+        await newComment.populate('user', 'username email name');
+
+        return res.status(201).json(newComment);
+    } catch (err) {
+        return res.status(500).json({ error: err.message });
+    }
+};
+
 

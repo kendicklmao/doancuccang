@@ -23,4 +23,8 @@ taskRouter.post('/:id/checklist', auth, controller.addChecklistItem);
 
 taskRouter.post('/:id/checklist/:itemId', auth, controller.toggleChecklistItem);
 
+taskRouter.get('/:id/comments', auth, controller.getTaskComments);
+
+taskRouter.post('/:id/comments', auth, controller.addComment);
+
 module.exports = taskRouter;
