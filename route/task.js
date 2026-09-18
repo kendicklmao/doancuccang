@@ -27,4 +27,6 @@ taskRouter.get('/:id/comments', auth, controller.getTaskComments);
 
 taskRouter.post('/:id/comments', auth, controller.addComment);
 
+taskRouter.get('/:id/activity', auth, controller.getTaskActivities);
+
 module.exports = taskRouter;

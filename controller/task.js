@@ -1,6 +1,23 @@
 const Task = require('./../model/task');
 const Column = require('./../model/column');
 const Project = require('./../model/project');
+const Comment = require('../model/Comment');
+const TaskActivity = require('../model/activity');
+
+// Helper function dùng để ghi log hoạt động ngắn gọn
+const logActivity = async (taskId, userId, action, details = null) => {
+    try {
+        if (!taskId || !userId) return;
+        await TaskActivity.create({
+            taskId,
+            user: userId,
+            action,
+            details
+        });
+    } catch (err) {
+        console.error('Lỗi khi lưu TaskActivity:', err.message);
+    }
+};
 
 exports.getTask = async (req, res) => {
     try {
@@ -11,8 +28,7 @@ exports.getTask = async (req, res) => {
         }
         const tasks = await Task.find(filter).sort('position');
         res.json(tasks);
-    }
-    catch (err) {
+    } catch (err) {
         res.status(500).json({ error: err.message });
     }
 };
@@ -24,36 +40,30 @@ exports.getTaskById = async (req, res) => {
             return res.status(404).json({ message: 'not found' });
         }
         res.json(task);
-    }
-    catch (err) {
+    } catch (err) {
         res.status(500).json({ error: err.message });
     }
 };
 
-// 🟢 LẤY TẤT CẢ TASK CỦA 1 PROJECT DỰA VÀO COLUMN
 exports.getTasksByProject = async (req, res) => {
     try {
-        // Hỗ trợ lấy projectId từ req.query hoặc req.params
         const projectId = req.query.projectId || req.params.projectId || req.params.id;
 
         if (!projectId) {
             return res.status(400).json({ message: 'Thiếu projectId' });
         }
 
-        // BƯỚC 1: Tìm tất cả Column thuộc Project này
         const columns = await Column.find({ projectId }).select('_id name position');
 
         if (!columns || columns.length === 0) {
-            return res.status(200).json([]); // Project chưa có cột nào -> Trả về mảng rỗng
+            return res.status(200).json([]);
         }
 
-        // Lấy danh sách ID các cột thuộc project
         const columnIds = columns.map(col => col._id);
 
-        // BƯỚC 2: Tìm tất cả Task nằm trong các Cột đó
         const tasks = await Task.find({ columnId: { $in: columnIds } })
             .populate('assignees', 'username email')
-            .populate('columnId', 'name position projectId'); // Populate thông tin cột để frontend dễ đếm
+            .populate('columnId', 'name position projectId');
 
         res.status(200).json(tasks);
     } catch (error) {
@@ -61,11 +71,10 @@ exports.getTasksByProject = async (req, res) => {
     }
 };
 
-// 🟢 TẠO TASK MỚI
 exports.createTask = async (req, res) => {
     try {
         const { title, description, columnId, projectId, assignees, priority, date } = req.body;
-        const currentUserId = req.user.id;
+        const currentUserId = req.user.id || req.user._id;
 
         if (!title || !title.trim()) {
             return res.status(400).json({ message: 'Task title is required' });
@@ -73,7 +82,6 @@ exports.createTask = async (req, res) => {
 
         let targetColumnId = columnId;
 
-        // Nếu Frontend chỉ gửi projectId mà không gửi columnId, tự tìm cột đầu tiên (VD: cột To do)
         if (!targetColumnId && projectId) {
             const firstColumn = await Column.findOne({ projectId }).sort('position');
             if (firstColumn) {
@@ -108,9 +116,11 @@ exports.createTask = async (req, res) => {
 
         await newTask.save();
 
-        // Cập nhật danh sách ID task trong Column
         column.taskOrderIds.push(newTask._id);
         await column.save();
+
+        // Log hoạt động tạo task
+        await logActivity(newTask._id, currentUserId, 'đã tạo task này');
 
         res.status(201).json({
             message: 'Task created successfully',
@@ -121,10 +131,11 @@ exports.createTask = async (req, res) => {
     }
 };
 
+// 🟢 CẬP NHẬT TASK (SỬA TÊN, MÔ TẢ, TRẠNG THÁI, DÙNG TRONG DRAWER)
 exports.updateTask = async (req, res) => {
     try {
         const taskId = req.params.id;
-        const currentUserId = req.user.id;
+        const currentUserId = req.user.id || req.user._id;
 
         const task = await Task.findById(taskId);
         if (!task) {
@@ -143,6 +154,20 @@ exports.updateTask = async (req, res) => {
             { new: true, runValidators: true }
         );
 
+        // Ghi log chi tiết tùy theo nội dung thay đổi
+        if (req.body.title && req.body.title !== task.title) {
+            await logActivity(taskId, currentUserId, `đã đổi tên task thành "${req.body.title}"`);
+        } else if (req.body.columnId && req.body.columnId.toString() !== task.columnId.toString()) {
+            const targetCol = await Column.findById(req.body.columnId);
+            await logActivity(taskId, currentUserId, `đã chuyển task sang cột "${targetCol?.name || 'mới'}"`);
+        } else if (req.body.priority && req.body.priority !== task.priority) {
+            await logActivity(taskId, currentUserId, `đã đổi mức độ ưu tiên thành ${req.body.priority}`);
+        } else if (req.body.description !== undefined && req.body.description !== task.description) {
+            await logActivity(taskId, currentUserId, 'đã cập nhật mô tả task');
+        } else {
+            await logActivity(taskId, currentUserId, 'đã cập nhật thông tin task');
+        }
+
         res.json(updatedTask);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -152,7 +177,7 @@ exports.updateTask = async (req, res) => {
 exports.deleteTask = async (req, res) => {
     try {
         const taskId = req.params.id;
-        const currentUserId = req.user.id;
+        const currentUserId = req.user.id || req.user._id;
 
         const task = await Task.findById(taskId);
         if (!task) {
@@ -167,11 +192,13 @@ exports.deleteTask = async (req, res) => {
 
         await Task.findByIdAndDelete(taskId);
 
-        // Xóa ID task khỏi Column
         if (column) {
             column.taskOrderIds = column.taskOrderIds.filter(id => id.toString() !== taskId);
             await column.save();
         }
+
+        // Xóa tất cả activity liên quan đến task này
+        await TaskActivity.deleteMany({ taskId });
 
         res.json({ message: 'Task deleted successfully', id: taskId });
     } catch (err) {
@@ -179,16 +206,26 @@ exports.deleteTask = async (req, res) => {
     }
 };
 
+// 🟢 DI CHUYỂN TASK (KÉO THẢ KANBAN BOARD)
 exports.moveTask = async (req, res) => {
     try {
         const taskId = req.params.id;
         const { sourceColumnId, destColumnId, destinationIndex } = req.body;
-        const currentUserId = req.user.id; // Lấy ID của user đang đăng nhập
+        const currentUserId = req.user?.id || req.user?._id;
+
+        if (!currentUserId) {
+            return res.status(401).json({ message: 'Không tìm thấy thông tin xác thực người dùng' });
+        }
 
         const task = await Task.findById(taskId);
         if (!task) return res.status(404).json({ message: 'Task không tồn tại' });
 
-        const isAssignee = task.assignees.some(assigneeId => assigneeId.toString() === currentUserId);
+        const isAssignee = task.assignees?.some(assignee => {
+            if (!assignee) return false;
+            const assigneeId = assignee._id ? assignee._id.toString() : assignee.toString();
+            return assigneeId === currentUserId.toString();
+        });
+
         if (!isAssignee) {
             return res.status(403).json({ message: 'Chỉ người được phân công (assignee) mới có quyền di chuyển task này' });
         }
@@ -200,57 +237,71 @@ exports.moveTask = async (req, res) => {
             return res.status(400).json({ message: 'Cột nguồn hoặc cột đích không hợp lệ' });
         }
 
-        const project = await Project.findOne({ _id: sourceCol.projectId });
-        if (!project) {
-            return res.status(403).json({ message: 'Bạn không có quyền thực hiện thao tác này' });
-        }
-
-        // Kéo thả TRONG CÙNG 1 CỘT
-        if (sourceColumnId === destColumnId) {
+        // 1. Kéo thả TRONG CÙNG 1 CỘT
+        if (sourceColumnId.toString() === destColumnId.toString()) {
             const currentOrder = sourceCol.taskOrderIds.map(id => id.toString());
             const filteredOrder = currentOrder.filter(id => id !== taskId.toString());
-            filteredOrder.splice(destinationIndex, 0, taskId);
+
+            const validIndex = Math.max(0, Math.min(destinationIndex, filteredOrder.length));
+            filteredOrder.splice(validIndex, 0, taskId);
 
             sourceCol.taskOrderIds = filteredOrder;
             await sourceCol.save();
+
+            return res.status(200).json({
+                message: 'Cập nhật vị trí thành công',
+                taskId,
+                destColumnId,
+                taskOrderIds: sourceCol.taskOrderIds
+            });
         }
-        // Kéo thả SANG CỘT KHÁC
-        else {
-            sourceCol.taskOrderIds = sourceCol.taskOrderIds.filter(id => id.toString() !== taskId.toString());
-            await sourceCol.save();
 
-            const destOrder = destCol.taskOrderIds.map(id => id.toString());
-            destOrder.splice(destinationIndex, 0, taskId);
+        // 2. Kéo thả SANG CỘT KHÁC
+        sourceCol.taskOrderIds = sourceCol.taskOrderIds.filter(id => id.toString() !== taskId.toString());
 
-            destCol.taskOrderIds = destOrder;
-            await destCol.save();
+        const destOrder = destCol.taskOrderIds.map(id => id.toString());
+        const validIndex = Math.max(0, Math.min(destinationIndex, destOrder.length));
+        destOrder.splice(validIndex, 0, taskId);
+        destCol.taskOrderIds = destOrder;
 
-            task.columnId = destColumnId;
-            await task.save();
-        }
+        task.columnId = destColumnId;
+
+        await Promise.all([
+            sourceCol.save(),
+            destCol.save(),
+            task.save()
+        ]);
+
+        // Ghi log hoạt động chuyển cột
+        await logActivity(
+            taskId,
+            currentUserId,
+            `đã chuyển task từ cột "${sourceCol.title || 'Cột cũ'}" sang "${destCol.title || 'Cột mới'}"`
+        );
 
         return res.status(200).json({
             message: 'Cập nhật vị trí thành công',
             taskId,
             destColumnId,
-            taskOrderIds: sourceColumnId === destColumnId ? sourceCol.taskOrderIds : destCol.taskOrderIds
+            taskOrderIds: destCol.taskOrderIds
         });
+
     } catch (err) {
-        return res.status(500).json({ error: err.message });
+        console.error('Lỗi khi moveTask:', err);
+        return res.status(500).json({ error: err.message || 'Lỗi hệ thống khi di chuyển task' });
     }
 };
 
 exports.toggleChecklistItem = async (req, res) => {
     try {
         const { id, itemId } = req.params;
+        const currentUserId = req.user?.id || req.user?._id;
 
-        // 1. Tìm task để lấy trạng thái completed hiện tại của item
         const task = await Task.findById(id);
         if (!task) {
             return res.status(404).json({ message: 'Task không tồn tại' });
         }
 
-        // Tìm item theo _id hoặc index
         const item = task.checklist.find((chk, idx) =>
             String(chk._id) === String(itemId) || String(idx) === String(itemId)
         );
@@ -259,12 +310,19 @@ exports.toggleChecklistItem = async (req, res) => {
             return res.status(404).json({ message: 'Không tìm thấy checklist item' });
         }
 
-        // 2. Cập nhật trực tiếp xuống MongoDB bằng $set
+        const newStatus = !item.completed;
+
         const updatedTask = await Task.findOneAndUpdate(
             { _id: id, "checklist._id": item._id },
-            { $set: { "checklist.$.completed": !item.completed } },
-            { new: true } // Trả về data mới nhất sau khi update
+            { $set: { "checklist.$.completed": newStatus } },
+            { new: true }
         );
+
+        // Ghi log checklist
+        const actionMsg = newStatus
+            ? `đã hoàn thành công việc "${item.text}"`
+            : `đã đánh dấu chưa hoàn thành "${item.text}"`;
+        await logActivity(id, currentUserId, actionMsg);
 
         return res.status(200).json(updatedTask);
     } catch (err) {
@@ -276,6 +334,7 @@ exports.addChecklistItem = async (req, res) => {
     try {
         const { id } = req.params;
         const { text } = req.body;
+        const currentUserId = req.user?.id || req.user?._id;
 
         if (!text || !text.trim()) {
             return res.status(400).json({ message: 'Nội dung checklist không được để trống' });
@@ -291,20 +350,20 @@ exports.addChecklistItem = async (req, res) => {
             return res.status(404).json({ message: 'Task không tồn tại' });
         }
 
+        await logActivity(id, currentUserId, `đã thêm mục checklist "${text.trim()}"`);
+
         return res.status(200).json(task);
     } catch (err) {
         return res.status(500).json({ error: err.message });
     }
 };
 
-const Comment = require('../model/Comment');
-
 exports.getTaskComments = async (req, res) => {
     try {
         const { id } = req.params;
         const comments = await Comment.find({ taskId: id })
-            .populate('user', 'username email name') // Populate lấy thông tin người dùng
-            .sort({ createdAt: 1 }); // Sắp xếp cũ trước, mới sau
+            .populate('user', 'username email name')
+            .sort({ createdAt: 1 });
 
         return res.status(200).json(comments);
     } catch (err) {
@@ -316,7 +375,7 @@ exports.addComment = async (req, res) => {
     try {
         const { id } = req.params;
         const { text } = req.body;
-        const userId = req.user.id; // Lấy ID từ Middleware xác thực Auth
+        const userId = req.user.id || req.user._id;
 
         if (!text || !text.trim()) {
             return res.status(400).json({ message: 'Nội dung bình luận không được để trống' });
@@ -329,9 +388,10 @@ exports.addComment = async (req, res) => {
         });
 
         await newComment.save();
-
-        // Populate thông tin user để trả về Frontend hiển thị ngay tên người dùng
         await newComment.populate('user', 'username email name');
+
+        // Ghi log hoạt động khi thêm bình luận
+        await logActivity(id, userId, 'đã thêm một bình luận');
 
         return res.status(201).json(newComment);
     } catch (err) {
@@ -339,4 +399,19 @@ exports.addComment = async (req, res) => {
     }
 };
 
+exports.getTaskActivities = async (req, res) => {
+    try {
+        const taskId = req.params.taskId || req.params.id;
 
+        const activities = await TaskActivity.find({ taskId })
+            .populate('user', 'username name email avatar')
+            .sort({ createdAt: -1 });
+
+        return res.status(200).json(activities);
+    } catch (error) {
+        return res.status(500).json({
+            message: 'Không thể lấy lịch sử hoạt động của task',
+            error: error.message
+        });
+    }
+};
