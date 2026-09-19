@@ -97,7 +97,7 @@ exports.getUserById = async (req, res) => {
 
 exports.updateUser = async (req, res) => {
     try {
-        const { username, email, password, role } = req.body;
+        const { username, email, password, role, status } = req.body;
         const userId = req.params.id;
 
         const currentUser = await User.findById(userId);
@@ -119,7 +119,14 @@ exports.updateUser = async (req, res) => {
                 hasAnyChange = true;
             }
         }
-                    if (role !== undefined) {
+            if (status !== undefined) {
+                const cleanStatus = status.trim();
+                if (cleanStatus !== currentUser.status) {
+                    updateData.status = cleanStatus;
+                    hasAnyChange = true;
+                }
+            }
+            if (role !== undefined) {
                 const cleanRole = role.trim();
                 if (cleanRole !== currentUser.role) {
                     // kiểm tra enum hợp lệ
