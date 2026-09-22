@@ -35,6 +35,7 @@ exports.register = async (req, res) => {
     }
 };
 
+
 exports.login = async (req, res) => {
     try {
         const { email, password } = req.body;
@@ -48,7 +49,7 @@ exports.login = async (req, res) => {
         if (!isMatch) {
             return res.status(400).json({ message: 'email or password not available' });
         }
-
+           
         const token = jwt.sign(
             { id: user._id, role: user.role },
             JWT_SECRET,
@@ -71,6 +72,17 @@ exports.login = async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 };
+exports.GetCurrentUser = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select('-password');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
 
 exports.getUsers = async (req, res) => {
     try {
