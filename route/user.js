@@ -10,6 +10,7 @@ userRouter.post('/login', controller.login);
 userRouter.get('/currentUser',auth,controller.GetCurrentUser);
 
 userRouter.get('/GetUsers', controller.getUsers);
+userRouter.get('/', controller.getUsers);
 
 userRouter.delete('/:id', auth, controller.deleteUser);
 

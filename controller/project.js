@@ -25,13 +25,18 @@ exports.createProject = async (req, res) => {
             return res.status(400).json({ message: 'Project name is required' });
         }
 
+        // Lọc an toàn cho assignees ở phía Server
+        const safeAssignees = Array.isArray(assignees)
+            ? assignees.filter(id => id && typeof id === 'string' && id.trim() !== '')
+            : [];
+
         const newProject = new Project({
             name: name.trim(),
             description,
             color,
             date,
             userId,
-            assignees
+            assignees: safeAssignees
         });
         await newProject.save();
 
@@ -50,6 +55,8 @@ exports.createProject = async (req, res) => {
             columns: createdColumns
         });
     } catch (err) {
+        // Log chi tiết lỗi ra Terminal Backend để dễ debug
+        console.error("Lỗi Server Create Project:", err);
         res.status(500).json({ error: err.message });
     }
 };
