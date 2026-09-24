@@ -90,9 +90,10 @@ exports.deleteProject = async (req, res) => {
 
 exports.updateProject = async (req, res) => {
     try {
-        const { name, description, color, date } = req.body;
+        // 1. Lấy thêm assignees từ req.body
+        const { name, description, color, date, assignees } = req.body;
         const projectId = req.params.id;
-        const userId = req.user.id;
+        const userId = req.user.id; // Hoặc req.user._id tùy middleware auth
 
         const currentProject = await Project.findOne({ _id: projectId, userId });
         if (!currentProject) {
@@ -120,12 +121,28 @@ exports.updateProject = async (req, res) => {
             hasAnyChange = true;
         }
 
-        if (date !== undefined) {
+        if (date !== undefined && date !== null) {
             const newDate = new Date(date).getTime();
-            const currentDate = new Date(currentProject.date).getTime();
+            const currentDate = currentProject.date ? new Date(currentProject.date).getTime() : 0;
 
             if (!isNaN(newDate) && newDate !== currentDate) {
                 updateData.date = date;
+                hasAnyChange = true;
+            }
+        }
+
+        // 2. Logic kiểm tra và cập nhật mảng ASSIGNEES
+        if (assignees !== undefined && Array.isArray(assignees)) {
+            // Lấy danh sách ID hiện tại dạng chuỗi
+            const currentAssigneeIds = (currentProject.assignees || []).map(id => String(id));
+            const newAssigneeIds = assignees.map(id => String(id));
+
+            // So sánh độ dài hoặc phần tử giữa 2 mảng xem có thay đổi không
+            const isDifferentLength = currentAssigneeIds.length !== newAssigneeIds.length;
+            const hasNewMember = newAssigneeIds.some(id => !currentAssigneeIds.includes(id));
+
+            if (isDifferentLength || hasNewMember) {
+                updateData.assignees = newAssigneeIds;
                 hasAnyChange = true;
             }
         }
@@ -134,14 +151,16 @@ exports.updateProject = async (req, res) => {
             return res.status(400).json({ message: 'No changes detected' });
         }
 
+        // 3. Tiến hành cập nhật và Populate thông tin thành viên trả về
         const updatedProject = await Project.findByIdAndUpdate(
             projectId,
             updateData,
             { new: true, runValidators: true }
-        );
+        ).populate('assignees', 'username email role');
 
         res.json({ message: 'Project updated successfully', project: updatedProject });
     } catch (err) {
+        console.error("Lỗi updateProject:", err);
         res.status(500).json({ error: err.message });
     }
 };

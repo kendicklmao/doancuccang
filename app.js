@@ -6,7 +6,11 @@ app.use(cors({
   credentials: true                // cho phép gửi cookie
 }));
 // Cho phép nhiều origin (ví dụ frontend chạy ở 5173 hoặc 5184)
+<<<<<<< HEAD
 const allowedOrigins = ["http://localhost:5177", "http://localhost:5185"];
+=======
+const allowedOrigins = ["http://localhost:5176", "http://localhost:5185", "http://localhost:5173"];
+>>>>>>> 768fe9c2b613f132f7a681b0eed5d03c7da16b51
 
 app.use(cors({
   origin: function (origin, callback) {
