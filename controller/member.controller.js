@@ -30,6 +30,12 @@ exports.InviteMember = async(req, res)=>{
     res.status(500).json({ error: err.message });
   }
 }
-exports.GetMember = async(req,res)=>{
-    
+exports.GetAllMember = async(req,res)=>{
+
+ try {
+     const data = await Member.find().populate("userId", "username email");
+    res.json(data);
+ } catch (error) {
+    res.status(500).json({ error: err.message });
+ }
 }
