@@ -1,32 +1,45 @@
 const express = require('express');
 const taskRouter = express.Router();
 const controller = require('./../controller/task');
-const auth = require('../middleware/auth');
+// Import verifyToken và checkRole từ middleware auth mới
+const { verifyToken, checkRole } = require('../middleware/auth');
 
-taskRouter.post('/', auth, controller.createTask);
+// 1. Tạo task mới (Add Task): Chỉ dành cho Manager
+taskRouter.post('/', verifyToken, checkRole(['Manager']), controller.createTask);
 
-taskRouter.get('/', auth, controller.getTask);
+// 2. Xóa task: Chỉ dành cho Manager
+taskRouter.delete('/:id', verifyToken, checkRole(['Manager']), controller.deleteTask);
 
-taskRouter.delete('/:id', auth, controller.deleteTask);
+// 3. Cập nhật task (VD: Chọn Assignee, sửa thông tin): Chỉ dành cho Leader
+taskRouter.put('/:id', verifyToken, checkRole(['Leader']), controller.updateTask);
 
-taskRouter.put('/:id', auth, controller.updateTask);
+// 4. Di chuyển task (Push to Board / Kéo thả): Chỉ dành cho Leader
+taskRouter.put('/:id/move', verifyToken, controller.moveTask);
 
-taskRouter.get('/:id', auth, controller.getTaskById);
+// ------------------- CÁC ROUTE XEM & TƯƠNG TÁC CHUNG (Member, Leader, Manager) -------------------
 
-taskRouter.put('/:id/move', auth, controller.moveTask);
+// Lấy danh sách task (Filter query)
+taskRouter.get('/', verifyToken, controller.getTask);
 
-taskRouter.get('/project/:id', auth, controller.getTasksByProject);
+// Lấy thông tin task theo ID
+taskRouter.get('/:id', verifyToken, controller.getTaskById);
 
-taskRouter.put("/:id/move", auth, controller.moveTask);
+// Lấy danh sách task theo Project ID
+taskRouter.get('/project/:id', verifyToken, controller.getTasksByProject);
 
-taskRouter.post('/:id/checklist', auth, controller.addChecklistItem);
+// Thêm mục checklist
+taskRouter.post('/:id/checklist', verifyToken, controller.addChecklistItem);
 
-taskRouter.post('/:id/checklist/:itemId', auth, controller.toggleChecklistItem);
+// Toggle hoàn thành mục checklist
+taskRouter.post('/:id/checklist/:itemId', verifyToken, controller.toggleChecklistItem);
 
-taskRouter.get('/:id/comments', auth, controller.getTaskComments);
+// Lấy danh sách comment của task
+taskRouter.get('/:id/comments', verifyToken, controller.getTaskComments);
 
-taskRouter.post('/:id/comments', auth, controller.addComment);
+// Thêm comment mới vào task
+taskRouter.post('/:id/comments', verifyToken, controller.addComment);
 
-taskRouter.get('/:id/activity', auth, controller.getTaskActivities);
+// Lấy lịch sử hoạt động (Activity) của task
+taskRouter.get('/:id/activity', verifyToken, controller.getTaskActivities);
 
 module.exports = taskRouter;

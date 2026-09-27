@@ -1,18 +1,23 @@
 const express = require('express');
 const userRouter = express.Router();
 const controller = require('./../controller/user');
-const auth = require('../middleware/auth');
+// Import verifyToken và checkRole từ middleware auth mới
+const { verifyToken, checkRole } = require('../middleware/auth');
 
+// 1. Auth public (Không cần đăng nhập)
 userRouter.post('/register', controller.register);
-
 userRouter.post('/login', controller.login);
 
-userRouter.get('/currentUser',auth,controller.GetCurrentUser);
+// 2. Lấy thông tin user hiện tại đang đăng nhập
+userRouter.get('/currentUser', verifyToken, controller.GetCurrentUser);
 
-userRouter.get('/GetUsers', controller.getUsers);
-userRouter.get('/', controller.getUsers);
-userRouter.delete('/:id', auth, controller.deleteUser);
+// 3. Quản lý danh sách người dùng: Chỉ dành cho Manager
+userRouter.get('/', verifyToken, controller.getUsers);
 
-userRouter.get('/:id', auth, controller.getUserById);
+// 4. Xóa người dùng: Chỉ dành cho Manager
+userRouter.delete('/:id', verifyToken, checkRole(['Manager']), controller.deleteUser);
+
+// 5. Lấy thông tin chi tiết 1 người dùng theo ID
+userRouter.get('/:id', verifyToken, controller.getUserById);
 
 module.exports = userRouter;

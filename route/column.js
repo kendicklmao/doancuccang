@@ -1,14 +1,19 @@
 const express = require("express");
 const columnRouter = express.Router();
 const controller = require("./../controller/column");
-const auth = require('../middleware/auth');
+// Import destructuring từ middleware auth mới
+const { verifyToken, checkRole } = require('../middleware/auth');
 
-columnRouter.post("/",auth, controller.createColumn);
+// 1. Tạo cột mới: Chỉ dành cho Manager
+columnRouter.post("/", verifyToken, checkRole(['Manager']), controller.createColumn);
 
-columnRouter.get("/", auth, controller.getColumn);
+// 2. Lấy danh sách cột: Cần verifyToken (Member, Leader, Manager đều xem được)
+columnRouter.get("/", verifyToken, controller.getColumn);
 
-columnRouter.get("/:id", auth, controller.getColumnById);
+// 3. Lấy cột theo ID: Cần verifyToken
+columnRouter.get("/:id", verifyToken, controller.getColumnById);
 
-columnRouter.get("/project/:projectId", auth, controller.getColumnsByProject);
+// 4. Lấy danh sách cột theo Project ID: Cần verifyToken
+columnRouter.get("/project/:projectId", verifyToken, controller.getColumnsByProject);
 
 module.exports = columnRouter;

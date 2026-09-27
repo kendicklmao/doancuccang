@@ -265,14 +265,16 @@ exports.moveTask = async (req, res) => {
             return res.status(200).json({ message: 'Đẩy lên Board thành công', task });
         }
 
-        // CASE 2: KÉO THẢ GIỮA CÁC CỘT TRÊN BOARD (GIỮ NGUYÊN CODE CŨ CỦA BẠN)
+        // CASE 2: KÉO THẢ GIỮA CÁC CỘT TRÊN BOARD (HOẶC SẮP XẾP TRONG CÙNG CỘT)
         const sourceCol = await Column.findById(sourceColumnId);
         if (!sourceCol) {
             return res.status(400).json({ message: 'Cột nguồn không hợp lệ' });
         }
 
-        // (Giữ nguyên logic di chuyển giữa 2 cột cũ của bạn ở đây...)
+        // Xóa task khỏi cột nguồn
         sourceCol.taskOrderIds = sourceCol.taskOrderIds.filter(id => id.toString() !== taskId.toString());
+
+        // Thêm task vào vị trí mới ở cột đích
         const destOrder = destCol.taskOrderIds.map(id => id.toString());
         const validIndex = Math.max(0, Math.min(destinationIndex, destOrder.length));
         destOrder.splice(validIndex, 0, taskId);
@@ -285,6 +287,10 @@ exports.moveTask = async (req, res) => {
             destCol.save(),
             task.save()
         ]);
+
+        if (currentUserId) {
+            await logActivity(taskId, currentUserId, `đã di chuyển task sang cột "${destCol.name}"`);
+        }
 
         return res.status(200).json({ message: 'Cập nhật vị trí thành công', taskId });
 

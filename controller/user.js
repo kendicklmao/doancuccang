@@ -9,21 +9,27 @@ const JWT_SECRET = process.env.JWT_SECRET || 'secretkey_kanban_123';
 
 exports.register = async (req, res) => {
     try {
-        const { username, email, password , role} = req.body;
+        const { username, email, password, role } = req.body;
 
-        const existingUser = await User.findOne({ $or: [{ email }, { username }] });
+        const cleanEmail = email.trim().toLowerCase();
+        const cleanUsername = username.trim();
+
+        const existingUser = await User.findOne({
+            $or: [{ email: cleanEmail }, { username: cleanUsername }]
+        });
+
         if (existingUser) {
-            return res.status(400).json({ message: 'email not available' });
+            return res.status(400).json({ message: 'Email or username not available' });
         }
 
         const salt = await bcrypt.genSalt(12);
         const hashedPassword = await bcrypt.hash(password, salt);
 
         const newUser = new User({
-            username,
-            email,
+            username: cleanUsername,
+            email: cleanEmail,
             password: hashedPassword,
-            role: role,
+            role: role || 'Member',
         });
 
         await newUser.save();
