@@ -8,8 +8,13 @@ const TaskActivity = require('./../model/activity');
 exports.getProject = async (req, res) => {
     try {
         const projects = await Project.find()
-            // Bắt buộc dòng này để MongoDB chuyển ID thành Object { _id, username, email }
-            .populate('assignees', 'username email role')
+            .populate({
+                path: 'assignees',
+                populate: {
+                    path: 'userId',
+                    select: 'username email avatar'
+                }
+            })
             .sort({ createdAt: -1 });
 
         res.status(200).json(projects);
@@ -197,15 +202,21 @@ exports.updateProject = async (req, res) => {
 exports.getProjectById = async (req, res) => {
     try {
         const project = await Project.findById(req.params.id)
-            .populate('assignees', 'username email');
+            .populate({
+                path: 'assignees',
+                populate: {
+                    path: 'userId',
+                    select: 'username email avatar'
+                }
+            });
 
         if (!project) {
-            return res.status(404).json({ message: 'Project không tồn tại' });
+            return res.status(404).json({ message: 'Project not found' });
         }
 
-        res.json(project);
+        res.status(200).json(project);
     } catch (error) {
-        res.status(500).json({ message: 'Lỗi server', error: error.message });
+        res.status(500).json({ message: error.message });
     }
 };
 
