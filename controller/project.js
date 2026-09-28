@@ -65,12 +65,6 @@ exports.deleteProject = async (req, res) => {
     try {
         const projectId = req.params.id;
         const currentUserId = req.user.id;
-
-        const project = await Project.findOne({ _id: projectId, userId: currentUserId });
-        if (!project) {
-            return res.status(404).json({ message: 'Project not found or unauthorized' });
-        }
-
         const columns = await Column.find({ projectId }).select('_id');
         const columnIds = columns.map(col => col._id);
 
