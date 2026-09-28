@@ -14,7 +14,7 @@ taskRouter.delete('/:id', verifyToken, checkRole(['Manager']), controller.delete
 taskRouter.put('/:id', verifyToken, checkRole(['Leader', "Manager"]), controller.updateTask);
 
 // 4. Di chuyển task (Push to Board / Kéo thả): Chỉ dành cho Leader
-taskRouter.put('/:id/move', verifyToken, controller.moveTask);
+taskRouter.put('/:id/move', verifyToken, checkRole(['Leader', "Manager", "Member"]), controller.moveTask);
 
 // ------------------- CÁC ROUTE XEM & TƯƠNG TÁC CHUNG (Member, Leader, Manager) -------------------
 
