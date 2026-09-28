@@ -11,7 +11,7 @@ taskRouter.post('/', verifyToken, checkRole(['Manager']), controller.createTask)
 taskRouter.delete('/:id', verifyToken, checkRole(['Manager']), controller.deleteTask);
 
 // 3. Cập nhật task (VD: Chọn Assignee, sửa thông tin): Chỉ dành cho Leader
-taskRouter.put('/:id', verifyToken, checkRole(['Leader']), controller.updateTask);
+taskRouter.put('/:id', verifyToken, checkRole(['Leader', "Manager"]), controller.updateTask);
 
 // 4. Di chuyển task (Push to Board / Kéo thả): Chỉ dành cho Leader
 taskRouter.put('/:id/move', verifyToken, controller.moveTask);

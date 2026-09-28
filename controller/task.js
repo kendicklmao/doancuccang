@@ -174,30 +174,58 @@ exports.deleteTask = async (req, res) => {
         const taskId = req.params.id;
         const currentUserId = req.user.id || req.user._id;
 
+        // 1. Tìm task cần xóa
         const task = await Task.findById(taskId);
         if (!task) {
             return res.status(404).json({ message: 'Task not found' });
         }
 
-        const column = await Column.findById(task.columnId);
-        const project = await Project.findOne({ _id: column.projectId, userId: currentUserId });
-        if (!project) {
-            return res.status(403).json({ message: 'Unauthorized to delete this task' });
+        // 2. Xác định projectId (lấy trực tiếp từ task hoặc qua column)
+        let projectId = task.projectId;
+        let column = null;
+
+        if (task.columnId) {
+            column = await Column.findById(task.columnId);
+            if (column && !projectId) {
+                projectId = column.projectId;
+            }
         }
 
+        // 3. Kiểm tra quyền của User đối với Project chứa task này
+        if (projectId) {
+            const project = await Project.findById(projectId);
+            if (!project) {
+                return res.status(404).json({ message: 'Project not found' });
+            }
+
+            // Kiểm tra xem user có phải người tạo Project (userId) hoặc có role Manager/Owner không
+            // Tùy theo cấu trúc Schema của Project (vd: members/assignees/userId):
+            const isProjectOwner = project.userId && project.userId.toString() === currentUserId.toString();
+
+            // Nếu bạn có phân quyền qua req.user.role hoặc mảng thành viên trong project:
+            const isManager = req.user.role === 'Manager';
+
+            if (!isProjectOwner && !isManager) {
+                return res.status(403).json({ message: 'Unauthorized to delete this task' });
+            }
+        }
+
+        // 4. Thực hiện xóa Task
         await Task.findByIdAndDelete(taskId);
 
-        if (column) {
-            column.taskOrderIds = column.taskOrderIds.filter(id => id.toString() !== taskId);
+        // 5. Nếu task nằm trong một column, xóa taskId ra khỏi taskOrderIds của column đó
+        if (column && Array.isArray(column.taskOrderIds)) {
+            column.taskOrderIds = column.taskOrderIds.filter(id => id.toString() !== taskId.toString());
             await column.save();
         }
 
-        // Xóa tất cả activity liên quan đến task này
+        // 6. Xóa tất cả Activity liên quan đến task
         await TaskActivity.deleteMany({ taskId });
 
-        res.json({ message: 'Task deleted successfully', id: taskId });
+        return res.json({ message: 'Task deleted successfully', id: taskId });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('Delete Task Error:', err);
+        return res.status(500).json({ error: err.message });
     }
 };
 
@@ -205,32 +233,39 @@ exports.deleteTask = async (req, res) => {
 exports.moveTask = async (req, res) => {
     try {
         const taskId = req.params.id;
-        const { sourceColumnId, destColumnId, destinationIndex } = req.body;
+        let { sourceColumnId, destColumnId, destinationIndex } = req.body;
         const currentUserId = req.user?.id || req.user?._id;
+
+        // CHUẨN HÓA DỮ LIỆU: Chuyển chuỗi "null"/"undefined" về null chuẩn
+        if (sourceColumnId === 'null' || sourceColumnId === 'undefined' || !sourceColumnId) {
+            sourceColumnId = null;
+        }
+        if (destColumnId === 'null' || destColumnId === 'undefined' || !destColumnId) {
+            return res.status(400).json({ message: 'Cột đích không hợp lệ' });
+        }
 
         const task = await Task.findById(taskId);
         if (!task) return res.status(404).json({ message: 'Task không tồn tại' });
 
         const destCol = await Column.findById(destColumnId);
         if (!destCol) {
-            return res.status(400).json({ message: 'Cột đích không tồn tại' });
+            return res.status(400).json({ message: 'Cột đích không tồn tại trong hệ thống' });
         }
 
-        // CASE 1: CHUYỂN TỪ BACKLOG (sourceColumnId: null) SANG CỘT TODO TRÊN BOARD
+        const targetIndex = typeof destinationIndex === 'number' ? destinationIndex : 0;
+
+        // CASE 1: KÉO TỪ BACKLOG SANG BOARD (sourceColumnId là null)
         if (!sourceColumnId) {
-            // Cập nhật columnId mới cho Task
             task.columnId = destColumnId;
 
-            // Thêm taskId vào danh sách taskOrderIds của Cột Todo
             const destOrder = destCol.taskOrderIds.map(id => id.toString());
-            const validIndex = Math.max(0, Math.min(destinationIndex || 0, destOrder.length));
-            destOrder.splice(validIndex, 0, taskId);
-            destCol.taskOrderIds = destOrder;
+            const cleanOrder = destOrder.filter(id => id !== taskId.toString());
+            const validIndex = Math.max(0, Math.min(targetIndex, cleanOrder.length));
 
-            await Promise.all([
-                task.save(),
-                destCol.save()
-            ]);
+            cleanOrder.splice(validIndex, 0, taskId);
+            destCol.taskOrderIds = cleanOrder;
+
+            await Promise.all([task.save(), destCol.save()]);
 
             if (currentUserId) {
                 await logActivity(taskId, currentUserId, `đã đẩy task từ Backlog sang cột "${destCol.name || 'Todo'}"`);
@@ -239,25 +274,22 @@ exports.moveTask = async (req, res) => {
             return res.status(200).json({ message: 'Đẩy lên Board thành công', task });
         }
 
-        // CASE 2: KÉO THẢ GIỮA CÁC CỘT TRÊN BOARD (HOẶC SẮP XẾP TRONG CÙNG CỘT)
+        // CASE 2: KÉO GIỮA CÁC CỘT TRÊN BOARD
         const sourceCol = await Column.findById(sourceColumnId);
-        if (!sourceCol) {
-            return res.status(400).json({ message: 'Cột nguồn không hợp lệ' });
+        if (sourceCol) {
+            sourceCol.taskOrderIds = sourceCol.taskOrderIds.filter(id => id.toString() !== taskId.toString());
+            await sourceCol.save();
         }
 
-        // Xóa task khỏi cột nguồn
-        sourceCol.taskOrderIds = sourceCol.taskOrderIds.filter(id => id.toString() !== taskId.toString());
+        const destOrder = destCol.taskOrderIds.map(id => id.toString()).filter(id => id !== taskId.toString());
+        const validIndex = Math.max(0, Math.min(targetIndex, destOrder.length));
 
-        // Thêm task vào vị trí mới ở cột đích
-        const destOrder = destCol.taskOrderIds.map(id => id.toString());
-        const validIndex = Math.max(0, Math.min(destinationIndex, destOrder.length));
         destOrder.splice(validIndex, 0, taskId);
         destCol.taskOrderIds = destOrder;
 
         task.columnId = destColumnId;
 
         await Promise.all([
-            sourceCol.save(),
             destCol.save(),
             task.save()
         ]);
