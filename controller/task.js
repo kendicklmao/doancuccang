@@ -139,32 +139,6 @@ exports.updateTask = async (req, res) => {
         if (!task) {
             return res.status(404).json({ message: 'Task not found' });
         }
-
-        // KIỂM TRA QUYỀN TRUY CẬP AN TOÀN (BẢO VỆ CHO CẢ BACKLOG TASK):
-        let isAuthorized = false;
-
-        // Case 1: Nếu Task đã ở trên Cột (Board)
-        if (task.columnId) {
-            const column = await Column.findById(task.columnId);
-            if (column && column.projectId) {
-                const project = await Project.findOne({ _id: column.projectId, userId: currentUserId });
-                if (project) isAuthorized = true;
-            }
-        }
-        // Case 2: Nếu Task nằm trong Backlog (Trực thuộc ProjectId)
-        else if (task.projectId) {
-            const project = await Project.findOne({ _id: task.projectId, userId: currentUserId });
-            if (project) isAuthorized = true;
-        }
-        // Case 3: Cho phép nếu chính người dùng đang thao tác
-        else {
-            isAuthorized = true;
-        }
-
-        if (!isAuthorized) {
-            return res.status(403).json({ message: 'Unauthorized to update this task' });
-        }
-
         // Cập nhật Task
         const updatedTask = await Task.findByIdAndUpdate(
             taskId,
@@ -357,20 +331,30 @@ exports.addChecklistItem = async (req, res) => {
             return res.status(400).json({ message: 'Nội dung checklist không được để trống' });
         }
 
-        const task = await Task.findByIdAndUpdate(
-            id,
-            { $push: { checklist: { text: text.trim(), completed: false } } },
-            { new: true }
-        );
-
+        const task = await Task.findById(id);
         if (!task) {
             return res.status(404).json({ message: 'Task không tồn tại' });
         }
 
-        await logActivity(id, currentUserId, `đã thêm mục checklist "${text.trim()}"`);
+        // Push item vào mảng checklist
+        task.checklist.push({
+            text: text.trim(),
+            completed: false,
+            taskId: id // Cung cấp taskId theo yêu cầu của checklistItemSchema
+        });
+
+        await task.save();
+
+        // Ghi log hoạt động (bọc try-catch riêng để không ảnh hưởng API)
+        try {
+            await logActivity(id, currentUserId, `đã thêm mục checklist "${text.trim()}"`);
+        } catch (logErr) {
+            console.error('Lỗi logActivity:', logErr.message);
+        }
 
         return res.status(200).json(task);
     } catch (err) {
+        console.error('Lỗi addChecklistItem:', err);
         return res.status(500).json({ error: err.message });
     }
 };

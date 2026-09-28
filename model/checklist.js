@@ -8,6 +8,11 @@ const checklistItemSchema = new mongoose.Schema({
     completed: {
         type: Boolean,
         default: false
+    },
+    taskId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Task',
+        required: true
     }
 });
 

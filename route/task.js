@@ -28,7 +28,7 @@ taskRouter.get('/:id', verifyToken, controller.getTaskById);
 taskRouter.get('/project/:id', verifyToken, controller.getTasksByProject);
 
 // Thêm mục checklist
-taskRouter.post('/:id/checklist', verifyToken, controller.addChecklistItem);
+taskRouter.post('/:id/checklist', verifyToken, checkRole(['Manager', 'Leader']), controller.addChecklistItem);
 
 // Toggle hoàn thành mục checklist
 taskRouter.post('/:id/checklist/:itemId', verifyToken, controller.toggleChecklistItem);
