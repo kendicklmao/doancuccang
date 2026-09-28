@@ -64,20 +64,34 @@ exports.createProject = async (req, res) => {
 exports.deleteProject = async (req, res) => {
     try {
         const projectId = req.params.id;
-        const currentUserId = req.user.id;
+        const currentUserId = req.user.id || req.user._id;
+
+        // 1. Lấy danh sách ID các cột thuộc project
         const columns = await Column.find({ projectId }).select('_id');
         const columnIds = columns.map(col => col._id);
 
-        if (columnIds.length > 0) {
-            await Task.deleteMany({ columnId: { $in: columnIds } });
+        // 2. Xóa tất cả Task (Gồm Task trong Column VÀ Task trong Backlog có projectId)
+        await Task.deleteMany({
+            $or: [
+                { projectId: projectId },             // Xóa task backlog (có projectId)
+                { columnId: { $in: columnIds } }       // Xóa task nằm trong các column của project
+            ]
+        });
 
-            await Column.deleteMany({ projectId });
+        // 3. Xóa tất cả Column thuộc project
+        await Column.deleteMany({ projectId });
+
+        // 4. (Tùy chọn) Xóa tất cả Activity liên quan nếu có
+        if (typeof TaskActivity !== 'undefined') {
+            await TaskActivity.deleteMany({ projectId });
         }
 
+        // 5. Xóa Project
         await Project.findByIdAndDelete(projectId);
 
-        res.json({ message: 'Project and all associated columns & tasks deleted successfully' });
+        res.json({ message: 'Project and all associated tasks (including backlog) deleted successfully' });
     } catch (err) {
+        console.error('Delete Project Error:', err);
         res.status(500).json({ error: err.message });
     }
 };
