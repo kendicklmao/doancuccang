@@ -17,7 +17,7 @@ projectRouter.get("/:id", verifyToken, controller.getProjectById);
 projectRouter.delete("/:id", verifyToken, checkRole(['Manager']), controller.deleteProject);
 
 // 5. Cập nhật dự án: Chỉ dành cho Manager
-projectRouter.put("/:id", verifyToken, checkRole(['Manager']), controller.updateProject);
+projectRouter.put("/:id", verifyToken, checkRole(['Manager', "Leader"]), controller.updateProject);
 
 // 6. Lấy danh sách thành viên dự án: Tất cả user đăng nhập đều xem được
 projectRouter.get("/:id/assignees", verifyToken, controller.getProjectAssignees);
