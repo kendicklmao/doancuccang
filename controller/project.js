@@ -2,6 +2,8 @@ const User = require('./../model/user');
 const Project = require('./../model/project');
 const Column = require('./../model/column');
 const Task = require('./../model/task');
+const Comment = require('./../model/comment');
+const TaskActivity = require('./../model/activity');
 
 exports.getProject = async (req, res) => {
     try {
@@ -64,35 +66,54 @@ exports.createProject = async (req, res) => {
 exports.deleteProject = async (req, res) => {
     try {
         const projectId = req.params.id;
-        const currentUserId = req.user.id || req.user._id;
 
-        // 1. Lấy danh sách ID các cột thuộc project
+        // 1. Lấy danh sách ID các column thuộc project
         const columns = await Column.find({ projectId }).select('_id');
         const columnIds = columns.map(col => col._id);
 
-        // 2. Xóa tất cả Task (Gồm Task trong Column VÀ Task trong Backlog có projectId)
+        // 2. Tìm TẤT CẢ các Task thuộc Project (gồm task ở Column và Backlog task)
+        const tasks = await Task.find({
+            $or: [
+                { projectId: projectId },
+                { columnId: { $in: columnIds } }
+            ]
+        }).select('_id');
+
+        const taskIds = tasks.map(t => t._id);
+
+        // 3. Xóa Comment & TaskActivity liên quan đến các task này
+        if (taskIds.length > 0) {
+            await Promise.all([
+                Comment.deleteMany({ taskId: { $in: taskIds } }),
+                TaskActivity.deleteMany({ taskId: { $in: taskIds } })
+            ]);
+        }
+
+        // 4. Xóa tất cả các Task thuộc Project
         await Task.deleteMany({
             $or: [
-                { projectId: projectId },             // Xóa task backlog (có projectId)
-                { columnId: { $in: columnIds } }       // Xóa task nằm trong các column của project
+                { projectId: projectId },
+                { columnId: { $in: columnIds } }
             ]
         });
 
-        // 3. Xóa tất cả Column thuộc project
+        // 5. Xóa tất cả Column
         await Column.deleteMany({ projectId });
 
-        // 4. (Tùy chọn) Xóa tất cả Activity liên quan nếu có
-        if (typeof TaskActivity !== 'undefined') {
-            await TaskActivity.deleteMany({ projectId });
+        // 6. Xóa Project chính
+        const deletedProject = await Project.findByIdAndDelete(projectId);
+
+        if (!deletedProject) {
+            return res.status(404).json({ message: 'Project not found' });
         }
 
-        // 5. Xóa Project
-        await Project.findByIdAndDelete(projectId);
+        return res.json({
+            message: 'Project and all associated tasks, columns, comments & activities deleted successfully'
+        });
 
-        res.json({ message: 'Project and all associated tasks (including backlog) deleted successfully' });
     } catch (err) {
         console.error('Delete Project Error:', err);
-        res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: err.message });
     }
 };
 

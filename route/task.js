@@ -42,4 +42,6 @@ taskRouter.post('/:id/comments', verifyToken, controller.addComment);
 // Lấy lịch sử hoạt động (Activity) của task
 taskRouter.get('/:id/activity', verifyToken, controller.getTaskActivities);
 
+taskRouter.delete('/:id/checklist/:itemId', verifyToken, checkRole(['Manager', 'Leader']), controller.deleteChecklist);
+
 module.exports = taskRouter;

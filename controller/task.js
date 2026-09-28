@@ -3,6 +3,7 @@ const Column = require('./../model/column');
 const Project = require('./../model/project');
 const Comment = require('../model/Comment');
 const TaskActivity = require('../model/activity');
+const Checklist = require('../model/checklist');
 
 // Helper function dùng để ghi log hoạt động ngắn gọn
 const logActivity = async (taskId, userId, action, details = null) => {
@@ -198,11 +199,7 @@ exports.deleteTask = async (req, res) => {
                 return res.status(404).json({ message: 'Project not found' });
             }
 
-            // Kiểm tra xem user có phải người tạo Project (userId) hoặc có role Manager/Owner không
-            // Tùy theo cấu trúc Schema của Project (vd: members/assignees/userId):
             const isProjectOwner = project.userId && project.userId.toString() === currentUserId.toString();
-
-            // Nếu bạn có phân quyền qua req.user.role hoặc mảng thành viên trong project:
             const isManager = req.user.role === 'Manager';
 
             if (!isProjectOwner && !isManager) {
@@ -210,19 +207,22 @@ exports.deleteTask = async (req, res) => {
             }
         }
 
-        // 4. Thực hiện xóa Task
+        // 4. Xóa tất cả Activity và Comment liên quan đến task
+        await Promise.all([
+            TaskActivity.deleteMany({ taskId }),
+            Comment.deleteMany({ taskId })
+        ]);
+
+        // 5. Thực hiện xóa Task
         await Task.findByIdAndDelete(taskId);
 
-        // 5. Nếu task nằm trong một column, xóa taskId ra khỏi taskOrderIds của column đó
+        // 6. Nếu task nằm trong một column, xóa taskId ra khỏi taskOrderIds của column đó
         if (column && Array.isArray(column.taskOrderIds)) {
             column.taskOrderIds = column.taskOrderIds.filter(id => id.toString() !== taskId.toString());
             await column.save();
         }
 
-        // 6. Xóa tất cả Activity liên quan đến task
-        await TaskActivity.deleteMany({ taskId });
-
-        return res.json({ message: 'Task deleted successfully', id: taskId });
+        return res.json({ message: 'Task, activities, and comments deleted successfully', id: taskId });
     } catch (err) {
         console.error('Delete Task Error:', err);
         return res.status(500).json({ error: err.message });
@@ -446,5 +446,30 @@ exports.getTaskActivities = async (req, res) => {
             message: 'Không thể lấy lịch sử hoạt động của task',
             error: error.message
         });
+    }
+};
+
+exports.deleteChecklist = async (req, res) => {
+    try {
+        const { id } = req.params; // ID của checklist item cần xóa
+
+        // Tìm Task chứa checklist item này và gỡ (pull) nó ra khỏi mảng checklist
+        const updatedTask = await Task.findOneAndUpdate(
+            { "checklist._id": id },
+            { $pull: { checklist: { _id: id } } },
+            { new: true }
+        );
+
+        if (!updatedTask) {
+            return res.status(404).json({ message: 'Checklist item không tồn tại' });
+        }
+
+        return res.status(200).json({
+            message: 'Xóa checklist thành công',
+            data: updatedTask
+        });
+    } catch (err) {
+        console.error('Delete Checklist Error:', err);
+        return res.status(500).json({ error: err.message });
     }
 };
