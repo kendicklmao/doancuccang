@@ -2,12 +2,19 @@ const User = require('./../model/user');
 const Project = require('./../model/project');
 const Column = require('./../model/column');
 const Task = require('./../model/task');
+const Comment = require('./../model/comment');
+const TaskActivity = require('./../model/activity');
 
 exports.getProject = async (req, res) => {
     try {
         const projects = await Project.find()
-            // Bắt buộc dòng này để MongoDB chuyển ID thành Object { _id, username, email }
-            .populate('assignees', 'username email role')
+            .populate({
+                path: 'assignees',
+                populate: {
+                    path: 'userId',
+                    select: 'username email avatar'
+                }
+            })
             .sort({ createdAt: -1 });
 
         res.status(200).json(projects);
@@ -64,27 +71,54 @@ exports.createProject = async (req, res) => {
 exports.deleteProject = async (req, res) => {
     try {
         const projectId = req.params.id;
-        const currentUserId = req.user.id;
 
-        const project = await Project.findOne({ _id: projectId, userId: currentUserId });
-        if (!project) {
-            return res.status(404).json({ message: 'Project not found or unauthorized' });
-        }
-
+        // 1. Lấy danh sách ID các column thuộc project
         const columns = await Column.find({ projectId }).select('_id');
         const columnIds = columns.map(col => col._id);
 
-        if (columnIds.length > 0) {
-            await Task.deleteMany({ columnId: { $in: columnIds } });
+        // 2. Tìm TẤT CẢ các Task thuộc Project (gồm task ở Column và Backlog task)
+        const tasks = await Task.find({
+            $or: [
+                { projectId: projectId },
+                { columnId: { $in: columnIds } }
+            ]
+        }).select('_id');
 
-            await Column.deleteMany({ projectId });
+        const taskIds = tasks.map(t => t._id);
+
+        // 3. Xóa Comment & TaskActivity liên quan đến các task này
+        if (taskIds.length > 0) {
+            await Promise.all([
+                Comment.deleteMany({ taskId: { $in: taskIds } }),
+                TaskActivity.deleteMany({ taskId: { $in: taskIds } })
+            ]);
         }
 
-        await Project.findByIdAndDelete(projectId);
+        // 4. Xóa tất cả các Task thuộc Project
+        await Task.deleteMany({
+            $or: [
+                { projectId: projectId },
+                { columnId: { $in: columnIds } }
+            ]
+        });
 
-        res.json({ message: 'Project and all associated columns & tasks deleted successfully' });
+        // 5. Xóa tất cả Column
+        await Column.deleteMany({ projectId });
+
+        // 6. Xóa Project chính
+        const deletedProject = await Project.findByIdAndDelete(projectId);
+
+        if (!deletedProject) {
+            return res.status(404).json({ message: 'Project not found' });
+        }
+
+        return res.json({
+            message: 'Project and all associated tasks, columns, comments & activities deleted successfully'
+        });
+
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('Delete Project Error:', err);
+        return res.status(500).json({ error: err.message });
     }
 };
 
@@ -168,15 +202,21 @@ exports.updateProject = async (req, res) => {
 exports.getProjectById = async (req, res) => {
     try {
         const project = await Project.findById(req.params.id)
-            .populate('assignees', 'username email');
+            .populate({
+                path: 'assignees',
+                populate: {
+                    path: 'userId',
+                    select: 'username email avatar'
+                }
+            });
 
         if (!project) {
-            return res.status(404).json({ message: 'Project không tồn tại' });
+            return res.status(404).json({ message: 'Project not found' });
         }
 
-        res.json(project);
+        res.status(200).json(project);
     } catch (error) {
-        res.status(500).json({ message: 'Lỗi server', error: error.message });
+        res.status(500).json({ message: error.message });
     }
 };
 

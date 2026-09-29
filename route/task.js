@@ -11,10 +11,10 @@ taskRouter.post('/', verifyToken, checkRole(['Manager']), controller.createTask)
 taskRouter.delete('/:id', verifyToken, checkRole(['Manager']), controller.deleteTask);
 
 // 3. Cập nhật task (VD: Chọn Assignee, sửa thông tin): Chỉ dành cho Leader
-taskRouter.put('/:id', verifyToken, checkRole(['Leader']), controller.updateTask);
+taskRouter.put('/:id', verifyToken, checkRole(['Leader', "Manager"]), controller.updateTask);
 
 // 4. Di chuyển task (Push to Board / Kéo thả): Chỉ dành cho Leader
-taskRouter.put('/:id/move', verifyToken, controller.moveTask);
+taskRouter.put('/:id/move', verifyToken, checkRole(['Leader', "Manager", "Member"]), controller.moveTask);
 
 // ------------------- CÁC ROUTE XEM & TƯƠNG TÁC CHUNG (Member, Leader, Manager) -------------------
 
@@ -28,7 +28,7 @@ taskRouter.get('/:id', verifyToken, controller.getTaskById);
 taskRouter.get('/project/:id', verifyToken, controller.getTasksByProject);
 
 // Thêm mục checklist
-taskRouter.post('/:id/checklist', verifyToken, controller.addChecklistItem);
+taskRouter.post('/:id/checklist', verifyToken, checkRole(['Manager', 'Leader']), controller.addChecklistItem);
 
 // Toggle hoàn thành mục checklist
 taskRouter.post('/:id/checklist/:itemId', verifyToken, controller.toggleChecklistItem);
@@ -41,5 +41,7 @@ taskRouter.post('/:id/comments', verifyToken, controller.addComment);
 
 // Lấy lịch sử hoạt động (Activity) của task
 taskRouter.get('/:id/activity', verifyToken, controller.getTaskActivities);
+
+taskRouter.delete('/:id/checklist/:itemId', verifyToken, checkRole(['Manager', 'Leader']), controller.deleteChecklist);
 
 module.exports = taskRouter;

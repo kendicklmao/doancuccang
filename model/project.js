@@ -25,7 +25,7 @@ const projectSchema = new mongoose.Schema({
     },
     assignees: [{
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
+        ref: 'Member',
     }]
 }, { timestamps: true });
 

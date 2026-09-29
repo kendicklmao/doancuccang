@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const checklistItemSchema = require('./checklist');
 
 const taskSchema = new mongoose.Schema({
     title: {
@@ -27,6 +28,8 @@ const taskSchema = new mongoose.Schema({
         enum: ['Low', 'Medium', 'High', 'Urgent'],
         default: 'Medium'
     },
+    checklist: [checklistItemSchema],
+
     date: {
         type: Date,
         default: Date.now
