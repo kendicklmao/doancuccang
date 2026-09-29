@@ -1,0 +1,339 @@
+const User = require('./../model/user');
+const Project = require('./../model/project');
+const Column = require('./../model/column');
+const Task = require('./../model/task');
+const Comment = require('./../model/comment');
+const TaskActivity = require('./../model/activity');
+
+exports.getProject = async (req, res) => {
+    try {
+        const projects = await Project.find()
+            .populate({
+                path: 'assignees',
+                populate: {
+                    path: 'userId',
+                    select: 'username email avatar'
+                }
+            })
+            .sort({ createdAt: -1 });
+
+        res.status(200).json(projects);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+exports.createProject = async (req, res) => {
+    try {
+        const { name, description, color, date, assignees } = req.body;
+        const userId = req.user.id;
+
+        if (!name || !name.trim()) {
+            return res.status(400).json({ message: 'Project name is required' });
+        }
+
+        // Lọc an toàn cho assignees ở phía Server
+        const safeAssignees = Array.isArray(assignees)
+            ? assignees.filter(id => id && typeof id === 'string' && id.trim() !== '')
+            : [];
+
+        const newProject = new Project({
+            name: name.trim(),
+            description,
+            color,
+            date,
+            userId,
+            assignees: safeAssignees
+        });
+        await newProject.save();
+
+        const defaultColumns = [
+            { title: 'Todo', position: 0, projectId: newProject._id },
+            { title: 'In Progress', position: 1, projectId: newProject._id },
+            { title: 'Review', position: 2, projectId: newProject._id },
+            { title: 'Done', position: 3, projectId: newProject._id }
+        ];
+
+        const createdColumns = await Column.insertMany(defaultColumns);
+
+        res.status(201).json({
+            message: 'Project created successfully with default columns',
+            project: newProject,
+            columns: createdColumns
+        });
+    } catch (err) {
+        // Log chi tiết lỗi ra Terminal Backend để dễ debug
+        console.error("Lỗi Server Create Project:", err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+exports.deleteProject = async (req, res) => {
+    try {
+        const projectId = req.params.id;
+
+        // 1. Lấy danh sách ID các column thuộc project
+        const columns = await Column.find({ projectId }).select('_id');
+        const columnIds = columns.map(col => col._id);
+
+        // 2. Tìm TẤT CẢ các Task thuộc Project (gồm task ở Column và Backlog task)
+        const tasks = await Task.find({
+            $or: [
+                { projectId: projectId },
+                { columnId: { $in: columnIds } }
+            ]
+        }).select('_id');
+
+        const taskIds = tasks.map(t => t._id);
+
+        // 3. Xóa Comment & TaskActivity liên quan đến các task này
+        if (taskIds.length > 0) {
+            await Promise.all([
+                Comment.deleteMany({ taskId: { $in: taskIds } }),
+                TaskActivity.deleteMany({ taskId: { $in: taskIds } })
+            ]);
+        }
+
+        // 4. Xóa tất cả các Task thuộc Project
+        await Task.deleteMany({
+            $or: [
+                { projectId: projectId },
+                { columnId: { $in: columnIds } }
+            ]
+        });
+
+        // 5. Xóa tất cả Column
+        await Column.deleteMany({ projectId });
+
+        // 6. Xóa Project chính
+        const deletedProject = await Project.findByIdAndDelete(projectId);
+
+        if (!deletedProject) {
+            return res.status(404).json({ message: 'Project not found' });
+        }
+
+        return res.json({
+            message: 'Project and all associated tasks, columns, comments & activities deleted successfully'
+        });
+
+    } catch (err) {
+        console.error('Delete Project Error:', err);
+        return res.status(500).json({ error: err.message });
+    }
+};
+
+exports.updateProject = async (req, res) => {
+    try {
+        // 1. Lấy thêm assignees từ req.body
+        const { name, description, color, date, assignees } = req.body;
+        const projectId = req.params.id;
+        const userId = req.user.id; // Hoặc req.user._id tùy middleware auth
+
+        const currentProject = await Project.findOne({ _id: projectId, userId });
+        if (!currentProject) {
+            return res.status(404).json({ message: 'Project not found or unauthorized' });
+        }
+
+        const updateData = {};
+        let hasAnyChange = false;
+
+        if (name !== undefined) {
+            const cleanName = name.trim();
+            if (cleanName && cleanName !== currentProject.name) {
+                updateData.name = cleanName;
+                hasAnyChange = true;
+            }
+        }
+
+        if (description !== undefined && description !== currentProject.description) {
+            updateData.description = description;
+            hasAnyChange = true;
+        }
+
+        if (color !== undefined && color !== currentProject.color) {
+            updateData.color = color;
+            hasAnyChange = true;
+        }
+
+        if (date !== undefined && date !== null) {
+            const newDate = new Date(date).getTime();
+            const currentDate = currentProject.date ? new Date(currentProject.date).getTime() : 0;
+
+            if (!isNaN(newDate) && newDate !== currentDate) {
+                updateData.date = date;
+                hasAnyChange = true;
+            }
+        }
+
+        // 2. Logic kiểm tra và cập nhật mảng ASSIGNEES
+        if (assignees !== undefined && Array.isArray(assignees)) {
+            // Lấy danh sách ID hiện tại dạng chuỗi
+            const currentAssigneeIds = (currentProject.assignees || []).map(id => String(id));
+            const newAssigneeIds = assignees.map(id => String(id));
+
+            // So sánh độ dài hoặc phần tử giữa 2 mảng xem có thay đổi không
+            const isDifferentLength = currentAssigneeIds.length !== newAssigneeIds.length;
+            const hasNewMember = newAssigneeIds.some(id => !currentAssigneeIds.includes(id));
+
+            if (isDifferentLength || hasNewMember) {
+                updateData.assignees = newAssigneeIds;
+                hasAnyChange = true;
+            }
+        }
+
+        if (!hasAnyChange) {
+            return res.status(400).json({ message: 'No changes detected' });
+        }
+
+        // 3. Tiến hành cập nhật và Populate thông tin thành viên trả về
+        const updatedProject = await Project.findByIdAndUpdate(
+            projectId,
+            updateData,
+            { new: true, runValidators: true }
+        ).populate('assignees', 'username email role');
+
+        res.json({ message: 'Project updated successfully', project: updatedProject });
+    } catch (err) {
+        console.error("Lỗi updateProject:", err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+exports.getProjectById = async (req, res) => {
+    try {
+        const project = await Project.findById(req.params.id)
+            .populate({
+                path: 'assignees',
+                populate: {
+                    path: 'userId',
+                    select: 'username email avatar'
+                }
+            });
+
+        if (!project) {
+            return res.status(404).json({ message: 'Project not found' });
+        }
+
+        res.status(200).json(project);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+exports.addProjectAssignee = async (req, res) => {
+    try {
+        const { projectId } = req.params;
+        const { memberUserId } = req.body;
+        const currentUserId = req.user.id;
+
+        const project = await Project.findOne({ _id: projectId, userId: currentUserId });
+        if (!project) {
+            return res.status(403).json({ message: 'Unauthorized or Project not found' });
+        }
+
+        await Project.findByIdAndUpdate(projectId, {
+            $addToSet: { assignees: memberUserId }
+        });
+
+        res.json({ message: 'Member added to project successfully' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+exports.getProjectAssignees = async (req, res) => {
+    try {
+        const { id } = req.params; // projectId
+        const currentUserId = req.user.id;
+
+        const project = await Project.findById(id)
+            .populate('userId', '_id username email avatar')
+            .populate('assignees', '_id username email avatar');
+
+        if (!project) {
+            return res.status(404).json({ message: 'Project not found' });
+        }
+
+        const isOwner = project.userId._id.toString() === currentUserId;
+        const isMember = project.assignees.some(member => member._id.toString() === currentUserId);
+
+        if (!isOwner && !isMember) {
+            return res.status(403).json({ message: 'Unauthorized to view this project members' });
+        }
+
+        const memberMap = new Map();
+
+        if (project.userId) {
+            memberMap.set(project.userId._id.toString(), {
+                _id: project.userId._id,
+                username: project.userId.username,
+                email: project.userId.email,
+                avatar: project.userId.avatar,
+                roleInProject: 'Owner'
+            });
+        }
+
+        project.assignees.forEach(member => {
+            if (!memberMap.has(member._id.toString())) {
+                memberMap.set(member._id.toString(), {
+                    _id: member._id,
+                    username: member.username,
+                    email: member.email,
+                    avatar: member.avatar,
+                    roleInProject: 'Member'
+                });
+            }
+        });
+
+        const membersList = Array.from(memberMap.values());
+
+        res.json({
+            success: true,
+            total: membersList.length,
+            assignees: membersList
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+exports.removeProjectAssignee = async (req, res) => {
+    try {
+        const { id: projectId, memberUserId } = req.params;
+        const currentUserId = req.user.id;
+
+        const project = await Project.findOne({ _id: projectId, userId: currentUserId });
+        if (!project) {
+            return res.status(403).json({ message: 'Unauthorized or Project not found' });
+        }
+
+        if (memberUserId === currentUserId) {
+            return res.status(400).json({ message: 'Cannot remove the project owner' });
+        }
+
+        const updatedProject = await Project.findByIdAndUpdate(
+            projectId,
+            { $pull: { assignees: memberUserId } },
+            { new: true }
+        );
+
+        const columns = await Column.find({ projectId }).select('_id');
+        const columnIds = columns.map(col => col._id);
+
+        if (columnIds.length > 0) {
+            await Task.updateMany(
+                { columnId: { $in: columnIds } },
+                { $pull: { assignees: memberUserId } }
+            );
+        }
+
+        res.json({
+            message: 'Member removed from project and associated tasks successfully',
+            project: updatedProject
+        });
+    }
+    catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
