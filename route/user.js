@@ -12,7 +12,7 @@ userRouter.post('/login', controller.login);
 userRouter.get('/currentUser', verifyToken, controller.GetCurrentUser);
 
 // 3. Quản lý danh sách người dùng: Chỉ dành cho Manager
-userRouter.get('/', verifyToken, controller.getUsers);
+userRouter.get('/', controller.getUsers);
 
 // 4. Xóa người dùng: Chỉ dành cho Manager
 userRouter.delete('/:id', verifyToken, checkRole(['Manager']), controller.deleteUser);
