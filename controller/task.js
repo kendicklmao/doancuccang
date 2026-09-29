@@ -76,7 +76,7 @@ exports.getTasksByProject = async (req, res) => {
 
 exports.createTask = async (req, res) => {
     try {
-        const { title, description, columnId, projectId, assignees, priority, date } = req.body;
+        const { title, description, columnId, projectId, assignees, priority, date , point} = req.body;
         const currentUserId = req.user ? (req.user.id || req.user._id) : null;
 
         if (!title || !title.trim()) {
@@ -94,7 +94,8 @@ exports.createTask = async (req, res) => {
             projectId: projectId,
             assignees: Array.isArray(assignees) ? assignees : [],
             priority: priority || 'Medium',
-            date: date || new Date()
+            date: date || new Date(),
+            point: point
         };
 
         // CHỈ thêm columnId nếu thực sự có truyền (Task tạo trực tiếp trên Board)

@@ -30,10 +30,16 @@ const taskSchema = new mongoose.Schema({
     },
     checklist: [checklistItemSchema],
 
+    point: {
+        type: Number,
+        default: 0
+    },
+
     date: {
         type: Date,
         default: Date.now
     },
-}, { timestamps: true });
+},
+    { timestamps: true });
 
 module.exports = mongoose.model('Task', taskSchema);

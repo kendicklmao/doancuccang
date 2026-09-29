@@ -15,6 +15,10 @@ const memberSchema = new mongoose.Schema({
         type: String,
         enum: ['Active', 'Inactive'],
         default: 'Active'
+    },
+    point: {
+        type: Number,
+        default: 0,
     }
 }, { timestamps: true });
 

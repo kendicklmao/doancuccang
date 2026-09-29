@@ -7,7 +7,8 @@ const session = require("express-session");
 const allowedOrigins = [
   "http://localhost:5179",
   "http://localhost:5185",
-  "http://localhost:5174"
+  "http://localhost:5173",//laam
+    "http://localhost:5174"//laam
 ];
 
 // Chỉ giữ lại 1 middleware CORS duy nhất này:
