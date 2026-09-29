@@ -68,11 +68,15 @@ exports.inviteMember = async (req, res) => {
             return res.status(400).json({ message: 'Người dùng này đã là thành viên trong hệ thống!' });
         }
 
-        // 4. Tạo mới Member
+        // 4. Cập nhật role mới cho User trong bảng User (nếu client có truyền role lên)
+        const selectedRole = role || 'Member';
+        user.role = selectedRole;
+        await user.save();
+
+        // 5. Tạo mới Member
         const newMember = new Member({
             userId: user._id,
-            role: role || 'Member',
-            position: position || 'None',
+            role: selectedRole,
             status: 'Active'
         });
 
