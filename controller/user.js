@@ -1,4 +1,5 @@
 const User = require('./../model/user');
+const Member = require('./../model/member');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const Project = require('./../model/project');
@@ -84,7 +85,12 @@ exports.GetCurrentUser = async (req, res) => {
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
-    res.json(user);
+    const memberInfor = await Member.findOne({userId : user})
+    // res.json(user);
+    return res.status(200).json({
+        userRole :user.role,
+        memberRole :memberInfor ? memberInfor.role :null
+    })
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

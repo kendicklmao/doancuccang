@@ -44,55 +44,29 @@ exports.getMemberById = async (req, res) => {
  * Mời / Thêm Member mới vào Hệ thống dựa trên Email
  */
 exports.inviteMember = async (req, res) => {
-    try {
-        const { email, role, position } = req.body;
+   try {
+    const { email, role } = req.body;
+    if (!email) return res.status(400).json({ message: 'Email is required' });
 
-        // 1. Validate Email bắt buộc
-        if (!email || !email.trim()) {
-            return res.status(400).json({ message: 'Email is required' });
-        }
+    const user = await User.findOne({ email: email.trim().toLowerCase() });
+    if (!user) return res.status(404).json({ message: 'User chưa đăng ký!' });
 
-        const cleanEmail = email.trim().toLowerCase();
+    const existingMember = await Member.findOne({ userId: user._id });
+    if (existingMember) return res.status(400).json({ message: 'Đã là thành viên!' });
 
-        // 2. Tìm User dựa trên Email
-        const user = await User.findOne({ email: cleanEmail });
-        if (!user) {
-            return res.status(404).json({
-                message: 'Người dùng với email này chưa đăng ký tài khoản trên hệ thống!'
-            });
-        }
+    const newMember = new Member({
+      userId: user._id,
+      role: role || 'Member',
+      status: 'Active'
+    });
 
-        // 3. Kiểm tra xem User đã tồn tại trong danh sách Member chưa
-        const existingMember = await Member.findOne({ userId: user._id });
-        if (existingMember) {
-            return res.status(400).json({ message: 'Người dùng này đã là thành viên trong hệ thống!' });
-        }
+    await newMember.save();
+    await newMember.populate('userId', '_id username email avatar role');
 
-        // 4. Cập nhật role mới cho User trong bảng User (nếu client có truyền role lên)
-        const selectedRole = role || 'Member';
-        user.role = selectedRole;
-        await user.save();
-
-        // 5. Tạo mới Member
-        const newMember = new Member({
-            userId: user._id,
-            role: selectedRole,
-            status: 'Active'
-        });
-
-        await newMember.save();
-
-        // Populate thông tin User trước khi phản hồi về Client
-        await newMember.populate('userId', '_id username email avatar role');
-
-        return res.status(201).json({
-            message: 'Invite/Add member successfully',
-            member: newMember
-        });
-    } catch (err) {
-        console.error("Lỗi Server Invite Member:", err);
-        return res.status(500).json({ error: err.message });
-    }
+    res.status(201).json({ message: 'Invite/Add member successfully', member: newMember });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 };
 
 /**
