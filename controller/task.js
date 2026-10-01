@@ -474,3 +474,40 @@ exports.deleteChecklist = async (req, res) => {
         return res.status(500).json({ error: err.message });
     }
 };
+
+// Thêm API hoặc bổ sung logic xử lý review task cho Leader
+exports.reviewTask = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { action } = req.body; // 'accept' hoặc 'not_accept'
+        const currentUserId = req.user?.id || req.user?._id;
+
+        const task = await Task.findById(id);
+        if (!task) return res.status(404).json({ message: 'Task không tồn tại' });
+
+        // Tìm danh sách cột trong project để lấy ID cột tương ứng
+        const columns = await Column.find({ projectId: task.projectId });
+
+        let targetColumn;
+        if (action === 'accept') {
+            // Tìm cột Accepted (hoặc tạo status accepted)
+            targetColumn = columns.find(c => c.name.toLowerCase().includes('accepted') || c.name.toLowerCase().includes('done'));
+        } else if (action === 'not_accept') {
+            // Tìm cột In Review
+            targetColumn = columns.find(c => c.name.toLowerCase().includes('in review') || c.name.toLowerCase().includes('review'));
+        }
+
+        if (targetColumn) {
+            task.columnId = targetColumn._id;
+            await task.save();
+
+            // Ghi log hoạt động
+            const logMsg = action === 'accept' ? 'đã duyệt task (Accepted)' : 'không duyệt task, chuyển về In Review';
+            await logActivity(id, currentUserId, logMsg);
+        }
+
+        return res.status(200).json({ message: 'Cập nhật trạng thái thành công', task });
+    } catch (err) {
+        return res.status(500).json({ error: err.message });
+    }
+};
