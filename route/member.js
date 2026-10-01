@@ -7,6 +7,6 @@ memberRouter.get('/', memberController.getMembers);
 memberRouter.get('/:id', memberController.getMemberById);
 memberRouter.post('/invite',  memberController.inviteMember);
 memberRouter.put('/:id', memberController.updateMember);
-memberRouter.delete('/:id', verifyToken,checkRole(["Manager","Admin"]), memberController.deleteMember);
+memberRouter.delete('/:id', verifyToken, memberController.deleteMember);
 
 module.exports = memberRouter;

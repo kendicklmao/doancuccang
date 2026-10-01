@@ -15,7 +15,7 @@ userRouter.get('/currentUser', verifyToken, controller.GetCurrentUser);
 userRouter.get('/', controller.getUsers);
 
 // 4. Xóa người dùng: Chỉ dành cho Manager
-userRouter.delete('/:id', verifyToken, checkRole(['Manager']), controller.deleteUser);
+userRouter.delete('/:id', verifyToken, controller.deleteUser);
 
 // 5. Lấy thông tin chi tiết 1 người dùng theo ID
 userRouter.get('/:id', verifyToken, controller.getUserById);

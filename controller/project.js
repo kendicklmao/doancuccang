@@ -62,7 +62,6 @@ exports.createProject = async (req, res) => {
             columns: createdColumns
         });
     } catch (err) {
-        // Log chi tiết lỗi ra Terminal Backend để dễ debug
         console.error("Lỗi Server Create Project:", err);
         res.status(500).json({ error: err.message });
     }
@@ -72,11 +71,9 @@ exports.deleteProject = async (req, res) => {
     try {
         const projectId = req.params.id;
 
-        // 1. Lấy danh sách ID các column thuộc project
         const columns = await Column.find({ projectId }).select('_id');
         const columnIds = columns.map(col => col._id);
 
-        // 2. Tìm TẤT CẢ các Task thuộc Project (gồm task ở Column và Backlog task)
         const tasks = await Task.find({
             $or: [
                 { projectId: projectId },
@@ -86,7 +83,6 @@ exports.deleteProject = async (req, res) => {
 
         const taskIds = tasks.map(t => t._id);
 
-        // 3. Xóa Comment & TaskActivity liên quan đến các task này
         if (taskIds.length > 0) {
             await Promise.all([
                 Comment.deleteMany({ taskId: { $in: taskIds } }),
@@ -94,7 +90,6 @@ exports.deleteProject = async (req, res) => {
             ]);
         }
 
-        // 4. Xóa tất cả các Task thuộc Project
         await Task.deleteMany({
             $or: [
                 { projectId: projectId },
@@ -102,10 +97,8 @@ exports.deleteProject = async (req, res) => {
             ]
         });
 
-        // 5. Xóa tất cả Column
         await Column.deleteMany({ projectId });
 
-        // 6. Xóa Project chính
         const deletedProject = await Project.findByIdAndDelete(projectId);
 
         if (!deletedProject) {
@@ -122,21 +115,32 @@ exports.deleteProject = async (req, res) => {
     }
 };
 
+// HÀM UPDATE PROJECT ĐÃ ĐƯỢC SỬA ĐỔI
 exports.updateProject = async (req, res) => {
     try {
-        // 1. Lấy thêm assignees từ req.body
-        const { name, description, color, date, assignees } = req.body;
+        const { name, description, color, date, dueDate, assignees } = req.body;
         const projectId = req.params.id;
-        const userId = req.user.id; // Hoặc req.user._id tùy middleware auth
+        const userId = req.user.id || req.user._id;
 
-        const currentProject = await Project.findOne({ _id: projectId, userId });
+        // 1. Kiểm tra project có tồn tại không
+        const currentProject = await Project.findById(projectId);
         if (!currentProject) {
-            return res.status(404).json({ message: 'Project not found or unauthorized' });
+            return res.status(404).json({ message: 'Project not found' });
+        }
+
+        // 2. Kiểm tra quyền chỉnh sửa (Chấp nhận Owner, Admin hoặc Assignee trong dự án)
+        const isOwner = String(currentProject.userId) === String(userId);
+        const isAdmin = req.user.role && req.user.role.toLowerCase() === 'admin';
+        const isAssignee = Array.isArray(currentProject.assignees) && currentProject.assignees.some(a => String(a) === String(userId));
+
+        if (!isOwner && !isAdmin && !isAssignee) {
+            return res.status(403).json({ message: 'Unauthorized to update this project' });
         }
 
         const updateData = {};
         let hasAnyChange = false;
 
+        // Cập nhật Name
         if (name !== undefined) {
             const cleanName = name.trim();
             if (cleanName && cleanName !== currentProject.name) {
@@ -145,33 +149,35 @@ exports.updateProject = async (req, res) => {
             }
         }
 
+        // Cập nhật Description
         if (description !== undefined && description !== currentProject.description) {
             updateData.description = description;
             hasAnyChange = true;
         }
 
+        // Cập nhật Color
         if (color !== undefined && color !== currentProject.color) {
             updateData.color = color;
             hasAnyChange = true;
         }
 
-        if (date !== undefined && date !== null) {
-            const newDate = new Date(date).getTime();
+        // Cập nhật Date / DueDate
+        const targetDate = date || dueDate;
+        if (targetDate !== undefined && targetDate !== null) {
+            const newDate = new Date(targetDate).getTime();
             const currentDate = currentProject.date ? new Date(currentProject.date).getTime() : 0;
 
             if (!isNaN(newDate) && newDate !== currentDate) {
-                updateData.date = date;
+                updateData.date = targetDate;
                 hasAnyChange = true;
             }
         }
 
-        // 2. Logic kiểm tra và cập nhật mảng ASSIGNEES
+        // Cập nhật Assignees
         if (assignees !== undefined && Array.isArray(assignees)) {
-            // Lấy danh sách ID hiện tại dạng chuỗi
             const currentAssigneeIds = (currentProject.assignees || []).map(id => String(id));
             const newAssigneeIds = assignees.map(id => String(id));
 
-            // So sánh độ dài hoặc phần tử giữa 2 mảng xem có thay đổi không
             const isDifferentLength = currentAssigneeIds.length !== newAssigneeIds.length;
             const hasNewMember = newAssigneeIds.some(id => !currentAssigneeIds.includes(id));
 
@@ -181,21 +187,29 @@ exports.updateProject = async (req, res) => {
             }
         }
 
+        // Nếu không gửi bất kỳ dữ liệu nào thay đổi
         if (!hasAnyChange) {
             return res.status(400).json({ message: 'No changes detected' });
         }
 
-        // 3. Tiến hành cập nhật và Populate thông tin thành viên trả về
+        // 3. Tiến hành lưu thay đổi vào DB
         const updatedProject = await Project.findByIdAndUpdate(
             projectId,
             updateData,
             { new: true, runValidators: true }
-        ).populate('assignees', 'username email role');
+        ).populate({
+            path: 'assignees',
+            select: 'username email role'
+        });
 
-        res.json({ message: 'Project updated successfully', project: updatedProject });
+        return res.json({
+            message: 'Project updated successfully',
+            project: updatedProject
+        });
+
     } catch (err) {
         console.error("Lỗi updateProject:", err);
-        res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: err.message });
     }
 };
 
@@ -243,7 +257,7 @@ exports.addProjectAssignee = async (req, res) => {
 
 exports.getProjectAssignees = async (req, res) => {
     try {
-        const { id } = req.params; // projectId
+        const { id } = req.params;
         const currentUserId = req.user.id;
 
         const project = await Project.findById(id)
@@ -336,4 +350,3 @@ exports.removeProjectAssignee = async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 };
-
