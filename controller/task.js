@@ -513,3 +513,30 @@ exports.reviewTask = async (req, res) => {
         return res.status(500).json({ error: err.message });
     }
 };
+
+
+
+exports.getMyTasks = async (req, res) => {
+    try {
+        const currentUserId = req.user.id; 
+
+        const myTasks = await Task.find({ assignees: currentUserId })
+            .populate({
+                path: 'projectId',
+                select: 'name color description' 
+            })
+            .populate({
+                path: 'columnId',
+                select: 'title position' 
+            })
+            .sort({ updatedAt: -1 }); 
+        return res.status(200).json(myTasks);
+        
+    } catch (error) {
+        console.error("Lỗi tại getMyTasks Controller:", error);
+        return res.status(500).json({ 
+            message: 'Đã xảy ra lỗi hệ thống khi lấy danh sách công việc!', 
+            error: error.message 
+        });
+    }
+}

@@ -20,6 +20,7 @@ taskRouter.put('/:id/move', verifyToken, controller.moveTask);
 
 // Lấy danh sách task (Filter query)
 taskRouter.get('/', verifyToken, controller.getTask);
+taskRouter.get('/my-task',verifyToken,controller.getMyTasks);
 
 // Lấy thông tin task theo ID
 taskRouter.get('/:id', verifyToken, controller.getTaskById);
