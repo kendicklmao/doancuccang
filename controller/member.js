@@ -29,9 +29,9 @@ exports.getMembersByProject = async (req, res) => {
     try {
         const { id } = req.params; // id chính là projectId dạng String
 
-        // Ép kiểu id sang ObjectId để MongoDB truy vấn chính xác
+        // Thêm 'points' (hoặc 'point') vào thuộc tính lấy ra từ User
         const members = await Member.find({ projectId: new mongoose.Types.ObjectId(id) })
-            .populate('userId', '_id username email avatar role')
+            .populate('userId', '_id username email avatar role point')
             .sort({ createdAt: -1 });
 
         return res.status(200).json(members);
