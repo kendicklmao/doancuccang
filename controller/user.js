@@ -241,7 +241,6 @@ exports.deleteUser = async (req, res) => {
     }
 };
 
-<<<<<<< HEAD
 exports.CheckEmail =async (req,res) =>{
     try {
         const {email}= req.body;
@@ -295,7 +294,9 @@ exports.resetPassword = async (req, res) => {
     } catch (err) {
         console.error("Lỗi tại resetPassword:", err);
         return res.status(500).json({ error: err.message });
-=======
+    }
+};
+
 exports.updateAssigneesPoints = async (assigneeIds, pointsAmount) => {
     console.log('===> Đang chạy updateAssigneesPoints với IDs:', assigneeIds, 'Số điểm:', pointsAmount);
 
@@ -318,6 +319,5 @@ exports.updateAssigneesPoints = async (assigneeIds, pointsAmount) => {
         console.log('===> Kết quả updateMany:', result);
     } catch (error) {
         console.error('Lỗi khi cập nhật điểm cho assignees:', error);
->>>>>>> 4ab8400285f60df119ed8f5b9c9876f88654e923
     }
 };
