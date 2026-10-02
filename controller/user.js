@@ -237,3 +237,59 @@ exports.deleteUser = async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 };
+
+exports.CheckEmail =async (req,res) =>{
+    try {
+        const {email}= req.body;
+        if(!email){
+            return res.status(400).json({ message: 'Please enter your email address' });
+        }
+        const user = await User.findOne({email :email});
+        if(!user){
+            return res.status(404).json({ message: 'Email address not found in the system' });
+        }
+        return res.status(200).json({
+            message:'Email verifield successfully',
+            userId :user._id
+        })
+    } catch (error) {
+         console.error("Lỗi forgotPassword:", err);
+        return res.status(500).json({ error: err.message });
+    }
+}
+exports.resetPassword = async (req, res) => {
+    try {
+        const { email, newPassword } = req.body;
+
+        if (!email || !newPassword) {
+            return res.status(400).json({ message: 'Email and new password are required' });
+        }
+
+        if (newPassword.length < 6) {
+            return res.status(400).json({ message: 'Password must be at least 6 characters long' });
+        }
+
+        // 1. Tìm user dựa trên email gửi lên
+        const user = await User.findOne({ email: email });
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // 2. Tiến hành băm mật khẩu mới bằng bcrypt đúng chuẩn
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+        // 3. FIX CHÍNH TẠI ĐÂY: Cập nhật trực tiếp vào DB, bỏ qua hook save() ngầm
+        await User.findByIdAndUpdate(
+            user._id, 
+            { password: hashedPassword },
+            { runValidators: true }
+        );
+
+        return res.status(200).json({ message: 'Password reset successfully' });
+
+    } catch (err) {
+        console.error("Lỗi tại resetPassword:", err);
+        return res.status(500).json({ error: err.message });
+    }
+};

@@ -5,7 +5,7 @@ const session = require("express-session");
 
 // Cho phép nhiều origin (ví dụ frontend chạy ở 5173, 5179, 5185...)
 const allowedOrigins = [
-  "http://localhost:5179",
+  "http://localhost:5180",
   "http://localhost:5178",
   "http://localhost:5173",//laam
     "http://localhost:5174"//laam

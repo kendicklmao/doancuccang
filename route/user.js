@@ -19,5 +19,7 @@ userRouter.delete('/:id', verifyToken, controller.deleteUser);
 
 // 5. Lấy thông tin chi tiết 1 người dùng theo ID
 userRouter.get('/:id', verifyToken, controller.getUserById);
-
+userRouter.post('/check-email',controller.CheckEmail);
+userRouter.post('/reset-password',controller.resetPassword);
+userRouter.put('/:id',controller.updateUser);
 module.exports = userRouter;
