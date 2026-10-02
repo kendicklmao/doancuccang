@@ -163,3 +163,37 @@ exports.deleteMember = async (req, res) => {
         return res.status(500).json({ error: err.message });
     }
 };
+
+exports.updateMembersPoints = async (memberIds, pointsAmount) => {
+    console.log('===> Đang chạy updateMembersPoints với IDs:', memberIds, 'Số điểm:', pointsAmount);
+
+    // Kiểm tra dữ liệu đầu vào: phải là mảng không rỗng và pointsAmount phải là số khác 0 (cho phép cộng hoặc trừ)
+    if (!Array.isArray(memberIds) || memberIds.length === 0 || !pointsAmount || isNaN(pointsAmount)) {
+        console.log('===> Bỏ qua vì thiếu memberIds hoặc pointsAmount không hợp lệ');
+        return;
+    }
+
+    try {
+        // Lọc và chuyển đổi các ID hợp lệ sang ObjectId
+        const validObjectIds = memberIds
+            .filter(id => mongoose.Types.ObjectId.isValid(id))
+            .map(id => new mongoose.Types.ObjectId(id));
+
+        if (validObjectIds.length === 0) {
+            console.log('===> Bỏ qua vì không có ObjectId nào hợp lệ');
+            return;
+        }
+
+        // Cập nhật điểm cho danh sách member trong database
+        const result = await User.updateMany(
+            { _id: { $in: validObjectIds } },
+            { $inc: { point: Number(pointsAmount) } }
+        );
+
+        console.log(`===> Đã cập nhật điểm thành công cho ${result.modifiedCount} thành viên.`);
+        return result;
+    } catch (error) {
+        console.error('Lỗi khi cập nhật điểm cho members:', error);
+        throw error;
+    }
+};

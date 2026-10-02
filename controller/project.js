@@ -5,6 +5,7 @@ const Task = require('./../model/task');
 const Comment = require('./../model/comment');
 const TaskActivity = require('./../model/activity');
 const Member = require('./../model/member');
+const Note = require('./../model/note');
 
 exports.getProject = async (req, res) => {
     try {
@@ -101,8 +102,10 @@ exports.deleteProject = async (req, res) => {
                     { columnId: { $in: columnIds } }
                 ]
             }),
-            // Xóa tất cả Member thuộc Project này
+            // Xóa tất cả Member thuộc Project
             Member.deleteMany({ projectId }),
+            // 🟢 Xóa tất cả Note thuộc Project
+            Note.deleteMany({ projectId }),
             Project.findByIdAndDelete(projectId)
         ];
 
@@ -118,7 +121,7 @@ exports.deleteProject = async (req, res) => {
         await Promise.all(deletePromises);
 
         return res.json({
-            message: 'Project and all associated members, columns, tasks, comments & activities deleted successfully'
+            message: 'Project and all associated members, columns, tasks, notes, comments & activities deleted successfully'
         });
 
     } catch (err) {

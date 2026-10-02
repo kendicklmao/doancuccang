@@ -21,6 +21,9 @@ const memberSchema = new mongoose.Schema({
         ref: 'Project',
         required: true
     },
+    point: {
+
+    }
 
 }, { timestamps: true });
 

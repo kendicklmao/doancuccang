@@ -32,7 +32,6 @@ exports.register = async (req, res) => {
             email: cleanEmail,
             password: hashedPassword,
             role: role || 'Member',
-            point: 0,
         });
 
         await newUser.save();
@@ -294,30 +293,5 @@ exports.resetPassword = async (req, res) => {
     } catch (err) {
         console.error("Lỗi tại resetPassword:", err);
         return res.status(500).json({ error: err.message });
-    }
-};
-
-exports.updateAssigneesPoints = async (assigneeIds, pointsAmount) => {
-    console.log('===> Đang chạy updateAssigneesPoints với IDs:', assigneeIds, 'Số điểm:', pointsAmount);
-
-    if (!Array.isArray(assigneeIds) || assigneeIds.length === 0 || !pointsAmount) {
-        console.log('===> Bỏ qua vì thiếu IDs hoặc pointsAmount = 0');
-        return;
-    }
-
-    try {
-        // Chuyển danh sách ID sang dạng ObjectId của Mongoose
-        const validObjectIds = assigneeIds
-            .filter(id => mongoose.Types.ObjectId.isValid(id))
-            .map(id => new mongoose.Types.ObjectId(id));
-
-        const result = await User.updateMany(
-            { _id: { $in: validObjectIds } },
-            { $inc: { point: Number(pointsAmount) } }
-        );
-
-        console.log('===> Kết quả updateMany:', result);
-    } catch (error) {
-        console.error('Lỗi khi cập nhật điểm cho assignees:', error);
     }
 };
