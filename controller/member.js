@@ -1,7 +1,9 @@
+const mongoose = require('mongoose');
 const Member = require('../model/member'); // Đường dẫn tới Model Member của bạn
 const User = require('../model/user');     // Đường dẫn tới Model User
 const Project = require('../model/project'); // Đường dẫn tới Model Project (để dọn dẹp data nếu xóa member)
 const Task = require('../model/task');       // Đường dẫn tới Model Task
+
 
 /**
  * Lấy danh sách tất cả Members (có populate thông tin User)
@@ -22,20 +24,19 @@ exports.getMembers = async (req, res) => {
 /**
  * Lấy thông tin chi tiết của 1 Member theo ID
  */
-exports.getMemberById = async (req, res) => {
+// memberController.js
+exports.getMembersByProject = async (req, res) => {
     try {
-        const { id } = req.params;
+        const { id } = req.params; // id chính là projectId dạng String
 
-        const member = await Member.findById(id)
-            .populate('userId', '_id username email avatar role');
+        // Thêm 'points' (hoặc 'point') vào thuộc tính lấy ra từ User
+        const members = await Member.find({ projectId: new mongoose.Types.ObjectId(id) })
+            .populate('userId', '_id username email avatar role point')
+            .sort({ createdAt: -1 });
 
-        if (!member) {
-            return res.status(404).json({ message: 'Member không tồn tại' });
-        }
-
-        return res.status(200).json(member);
+        return res.status(200).json(members);
     } catch (error) {
-        console.error("Lỗi getMemberById:", error);
+        console.error("Lỗi getMembersByProject:", error);
         return res.status(500).json({ message: 'Lỗi Server', error: error.message });
     }
 };
@@ -44,29 +45,31 @@ exports.getMemberById = async (req, res) => {
  * Mời / Thêm Member mới vào Hệ thống dựa trên Email
  */
 exports.inviteMember = async (req, res) => {
-   try {
-    const { email, role } = req.body;
-    if (!email) return res.status(400).json({ message: 'Email is required' });
+    try {
+        const { email, role, projectId } = req.body; // <--- Lấy thêm projectId
+        if (!email) return res.status(400).json({ message: 'Email is required' });
 
-    const user = await User.findOne({ email: email.trim().toLowerCase() });
-    if (!user) return res.status(404).json({ message: 'User chưa đăng ký!' });
+        const user = await User.findOne({ email: email.trim().toLowerCase() });
+        if (!user) return res.status(404).json({ message: 'User chưa đăng ký!' });
 
-    const existingMember = await Member.findOne({ userId: user._id });
-    if (existingMember) return res.status(400).json({ message: 'Đã là thành viên!' });
+        // Kiểm tra member đã tồn tại trong PROJECT NÀY chưa
+        const existingMember = await Member.findOne({ userId: user._id, projectId: projectId });
+        if (existingMember) return res.status(400).json({ message: 'Đã là thành viên dự án!' });
 
-    const newMember = new Member({
-      userId: user._id,
-      role: role || 'Member',
-      status: 'Active'
-    });
+        const newMember = new Member({
+            userId: user._id,
+            projectId: projectId, // <--- BỔ SUNG TRƯỜNG NÀY
+            role: role || 'Member',
+            status: 'Active'
+        });
 
-    await newMember.save();
-    await newMember.populate('userId', '_id username email avatar role');
+        await newMember.save();
+        await newMember.populate('userId', '_id username email avatar role');
 
-    res.status(201).json({ message: 'Invite/Add member successfully', member: newMember });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+        res.status(201).json({ message: 'Invite/Add member successfully', member: newMember });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 };
 
 /**
@@ -129,7 +132,7 @@ exports.updateMember = async (req, res) => {
 exports.deleteMember = async (req, res) => {
     try {
         const { id } = req.params; // Member ID
-
+        console.log(id);
         const member = await Member.findById(id);
         if (!member) {
             return res.status(404).json({ message: 'Member not found' });

@@ -3,9 +3,11 @@ const Column = require('./../model/column');
 const Project = require('./../model/project');
 const Comment = require('../model/Comment');
 const TaskActivity = require('../model/activity');
-const Checklist = require('../model/checklist');
 
-// Helper function dùng để ghi log hoạt động ngắn gọn
+// Import hàm cập nhật điểm từ controller user.js
+const { updateAssigneesPoints } = require('./user');
+
+// Helper function ghi log hoạt động
 const logActivity = async (taskId, userId, action, details = null) => {
     try {
         if (!taskId || !userId) return;
@@ -18,6 +20,17 @@ const logActivity = async (taskId, userId, action, details = null) => {
     } catch (err) {
         console.error('Lỗi khi lưu TaskActivity:', err.message);
     }
+};
+
+// Helper trích xuất mảng ID chuẩn cho assignees
+const extractAssigneeIds = (assignees) => {
+    if (!Array.isArray(assignees)) return [];
+    return assignees.map(a => {
+        if (typeof a === 'object' && a !== null) {
+            return String(a._id || a.id || '');
+        }
+        return String(a);
+    }).filter(id => Boolean(id));
 };
 
 exports.getTask = async (req, res) => {
@@ -54,10 +67,9 @@ exports.getTasksByProject = async (req, res) => {
             return res.status(400).json({ message: 'Thiếu projectId' });
         }
 
-        const columns = await Column.find({ projectId }).select('_id name position');
+        const columns = await Column.find({ projectId }).select('_id title position');
         const columnIds = columns ? columns.map(col => col._id) : [];
 
-        // LẤY CẢ TASK TRÊN BOARD (columnId thuộc columnIds) LẪN TASK TRONG BACKLOG (projectId và columnId = null)
         const tasks = await Task.find({
             $or: [
                 { columnId: { $in: columnIds } },
@@ -66,7 +78,7 @@ exports.getTasksByProject = async (req, res) => {
             ]
         })
             .populate('assignees', 'username name email')
-            .populate('columnId', 'name position projectId');
+            .populate('columnId', 'title position projectId');
 
         res.status(200).json(tasks);
     } catch (error) {
@@ -76,7 +88,7 @@ exports.getTasksByProject = async (req, res) => {
 
 exports.createTask = async (req, res) => {
     try {
-        const { title, description, columnId, projectId, assignees, priority, date , point} = req.body;
+        const { title, description, columnId, projectId, assignees, priority, startDate, date, point } = req.body;
         const currentUserId = req.user ? (req.user.id || req.user._id) : null;
 
         if (!title || !title.trim()) {
@@ -87,18 +99,19 @@ exports.createTask = async (req, res) => {
             return res.status(400).json({ message: 'Missing projectId' });
         }
 
-        // Tạo object task cơ bản
+        const pointVal = Number(point || 0);
+
         const taskData = {
             title: title.trim(),
             description: description || '',
             projectId: projectId,
             assignees: Array.isArray(assignees) ? assignees : [],
             priority: priority || 'Medium',
+            startDate: startDate || new Date(),
             date: date || new Date(),
-            point: point
+            point: pointVal
         };
 
-        // CHỈ thêm columnId nếu thực sự có truyền (Task tạo trực tiếp trên Board)
         if (columnId) {
             const column = await Column.findById(columnId);
             if (!column) {
@@ -107,18 +120,15 @@ exports.createTask = async (req, res) => {
             taskData.columnId = columnId;
         }
 
-        // Lưu vào Database
         const newTask = new Task(taskData);
         await newTask.save();
 
-        // Nếu có cột thì đẩy vào order
         if (columnId) {
             await Column.findByIdAndUpdate(columnId, {
                 $push: { taskOrderIds: newTask._id }
             });
         }
 
-        // Ghi log
         if (typeof logActivity === 'function' && currentUserId) {
             await logActivity(newTask._id, currentUserId, 'đã tạo task này').catch(() => {});
         }
@@ -131,7 +141,6 @@ exports.createTask = async (req, res) => {
     }
 };
 
-// 🟢 CẬP NHẬT TASK (SỬA TÊN, MÔ TẢ, TRẠNG THÁI, DÙNG TRONG DRAWER)
 exports.updateTask = async (req, res) => {
     try {
         const taskId = req.params.id;
@@ -141,23 +150,29 @@ exports.updateTask = async (req, res) => {
         if (!task) {
             return res.status(404).json({ message: 'Task not found' });
         }
-        // Cập nhật Task
+
+        if (req.body.point !== undefined) {
+            req.body.point = Number(req.body.point || 0);
+        }
+
         const updatedTask = await Task.findByIdAndUpdate(
             taskId,
             req.body,
             { new: true, runValidators: true }
         );
 
-        // Ghi log chi tiết hoạt động
         if (req.body.assignees) {
             await logActivity(taskId, currentUserId, 'đã cập nhật danh sách người thực hiện');
         } else if (req.body.title && req.body.title !== task.title) {
             await logActivity(taskId, currentUserId, `đã đổi tên task thành "${req.body.title}"`);
         } else if (req.body.columnId && String(req.body.columnId) !== String(task.columnId)) {
             const targetCol = await Column.findById(req.body.columnId);
-            await logActivity(taskId, currentUserId, `đã chuyển task sang cột "${targetCol?.name || 'mới'}"`);
+            const colName = targetCol ? (targetCol.title || targetCol.name) : 'mới';
+            await logActivity(taskId, currentUserId, `đã chuyển task sang cột "${colName}"`);
         } else if (req.body.priority && req.body.priority !== task.priority) {
             await logActivity(taskId, currentUserId, `đã đổi mức độ ưu tiên thành ${req.body.priority}`);
+        } else if (req.body.startDate && req.body.startDate !== task.startDate) {
+            await logActivity(taskId, currentUserId, 'đã cập nhật ngày bắt đầu');
         } else if (req.body.description !== undefined && req.body.description !== task.description) {
             await logActivity(taskId, currentUserId, 'đã cập nhật mô tả task');
         } else {
@@ -176,13 +191,11 @@ exports.deleteTask = async (req, res) => {
         const taskId = req.params.id;
         const currentUserId = req.user.id || req.user._id;
 
-        // 1. Tìm task cần xóa
         const task = await Task.findById(taskId);
         if (!task) {
             return res.status(404).json({ message: 'Task not found' });
         }
 
-        // 2. Xác định projectId (lấy trực tiếp từ task hoặc qua column)
         let projectId = task.projectId;
         let column = null;
 
@@ -193,55 +206,44 @@ exports.deleteTask = async (req, res) => {
             }
         }
 
-        // 3. Kiểm tra quyền của User đối với Project chứa task này
         if (projectId) {
             const project = await Project.findById(projectId);
             if (!project) {
                 return res.status(404).json({ message: 'Project not found' });
             }
 
-            const isProjectOwner = project.userId && project.userId.toString() === currentUserId.toString();
-            const isManager = req.user.role === 'Manager';
-
-            if (!isProjectOwner && !isManager) {
-                return res.status(403).json({ message: 'Unauthorized to delete this task' });
-            }
         }
 
-        // 4. Xóa tất cả Activity và Comment liên quan đến task
         await Promise.all([
             TaskActivity.deleteMany({ taskId }),
             Comment.deleteMany({ taskId })
         ]);
 
-        // 5. Thực hiện xóa Task
         await Task.findByIdAndDelete(taskId);
 
-        // 6. Nếu task nằm trong một column, xóa taskId ra khỏi taskOrderIds của column đó
         if (column && Array.isArray(column.taskOrderIds)) {
             column.taskOrderIds = column.taskOrderIds.filter(id => id.toString() !== taskId.toString());
             await column.save();
         }
 
-        return res.json({ message: 'Task, activities, and comments deleted successfully', id: taskId });
+        return res.json({ message: 'Task deleted successfully', id: taskId });
     } catch (err) {
         console.error('Delete Task Error:', err);
         return res.status(500).json({ error: err.message });
     }
 };
 
-// 🟢 DI CHUYỂN TASK (KÉO THẢ KANBAN BOARD)
+// DI CHUYỂN TASK (KÉO THẢ & CỘNG / TRỪ ĐIỂM)
 exports.moveTask = async (req, res) => {
     try {
         const taskId = req.params.id;
         let { sourceColumnId, destColumnId, destinationIndex } = req.body;
         const currentUserId = req.user?.id || req.user?._id;
 
-        // CHUẨN HÓA DỮ LIỆU: Chuyển chuỗi "null"/"undefined" về null chuẩn
         if (sourceColumnId === 'null' || sourceColumnId === 'undefined' || !sourceColumnId) {
             sourceColumnId = null;
         }
-        if (destColumnId === 'null' || destColumnId === 'undefined' || !destColumnId) {
+        if (!destColumnId || destColumnId === 'null' || destColumnId === 'undefined') {
             return res.status(400).json({ message: 'Cột đích không hợp lệ' });
         }
 
@@ -249,58 +251,54 @@ exports.moveTask = async (req, res) => {
         if (!task) return res.status(404).json({ message: 'Task không tồn tại' });
 
         const destCol = await Column.findById(destColumnId);
-        if (!destCol) {
-            return res.status(400).json({ message: 'Cột đích không tồn tại trong hệ thống' });
-        }
+        if (!destCol) return res.status(400).json({ message: 'Cột đích không tồn tại' });
 
-        const targetIndex = typeof destinationIndex === 'number' ? destinationIndex : 0;
+        const sourceCol = sourceColumnId ? await Column.findById(sourceColumnId) : null;
 
-        // CASE 1: KÉO TỪ BACKLOG SANG BOARD (sourceColumnId là null)
-        if (!sourceColumnId) {
-            task.columnId = destColumnId;
+        // ƯU TIÊN LẤY Column.title (dựa theo Schema) NẾU KHÔNG CÓ MỚI LẤY Column.name
+        const destTitle = (destCol.title || destCol.name || '').toLowerCase();
+        const sourceTitle = sourceCol ? (sourceCol.title || sourceCol.name || '').toLowerCase() : '';
 
-            const destOrder = destCol.taskOrderIds.map(id => id.toString());
-            const cleanOrder = destOrder.filter(id => id !== taskId.toString());
-            const validIndex = Math.max(0, Math.min(targetIndex, cleanOrder.length));
+        // ĐIỀU KIỆN NHẬN DIỆN CỘT HOÀN THÀNH
+        const isDestDone = destTitle.includes('done') || destTitle.includes('Done') || destTitle.includes('accepted') || destTitle.includes('finish');
+        const isSourceDone = sourceTitle.includes('done') || sourceTitle.includes('Done') || sourceTitle.includes('accepted') || sourceTitle.includes('finish');
 
-            cleanOrder.splice(validIndex, 0, taskId);
-            destCol.taskOrderIds = cleanOrder;
+        const taskPoints = Number(task.point || 0);
+        const assigneeIds = extractAssigneeIds(task.assignees);
 
-            await Promise.all([task.save(), destCol.save()]);
-
-            if (currentUserId) {
-                await logActivity(taskId, currentUserId, `đã đẩy task từ Backlog sang cột "${destCol.name || 'Todo'}"`);
+        // Kéo vào cột Done từ cột khác -> Cộng điểm
+        if (isDestDone && !isSourceDone && taskPoints > 0 && assigneeIds.length > 0) {
+            if (typeof updateAssigneesPoints === 'function') {
+                console.log(`Cộng điểm cho assignees ${assigneeIds.join(', ')} với số điểm ${taskPoints}`);
+                await updateAssigneesPoints(assigneeIds, taskPoints);
             }
-
-            return res.status(200).json({ message: 'Đẩy lên Board thành công', task });
+        }
+        // Kéo từ cột Done ra cột khác -> Trừ lại điểm
+        else if (!isDestDone && isSourceDone && taskPoints > 0 && assigneeIds.length > 0) {
+            if (typeof updateAssigneesPoints === 'function') {
+                await updateAssigneesPoints(assigneeIds, -taskPoints);
+            }
         }
 
-        // CASE 2: KÉO GIỮA CÁC CỘT TRÊN BOARD
-        const sourceCol = await Column.findById(sourceColumnId);
+        // Cập nhật mảng taskOrderIds của Cột
         if (sourceCol) {
             sourceCol.taskOrderIds = sourceCol.taskOrderIds.filter(id => id.toString() !== taskId.toString());
             await sourceCol.save();
         }
 
         const destOrder = destCol.taskOrderIds.map(id => id.toString()).filter(id => id !== taskId.toString());
-        const validIndex = Math.max(0, Math.min(targetIndex, destOrder.length));
-
+        const validIndex = Math.max(0, Math.min(destinationIndex || 0, destOrder.length));
         destOrder.splice(validIndex, 0, taskId);
         destCol.taskOrderIds = destOrder;
 
         task.columnId = destColumnId;
-
-        await Promise.all([
-            destCol.save(),
-            task.save()
-        ]);
+        await Promise.all([destCol.save(), task.save()]);
 
         if (currentUserId) {
-            await logActivity(taskId, currentUserId, `đã di chuyển task sang cột "${destCol.name}"`);
+            await logActivity(taskId, currentUserId, `đã di chuyển task sang cột "${destCol.title || destCol.name}"`);
         }
 
         return res.status(200).json({ message: 'Cập nhật vị trí thành công', taskId });
-
     } catch (err) {
         console.error('Lỗi khi moveTask:', err);
         return res.status(500).json({ error: err.message });
@@ -333,7 +331,6 @@ exports.toggleChecklistItem = async (req, res) => {
             { new: true }
         );
 
-        // Ghi log checklist
         const actionMsg = newStatus
             ? `đã hoàn thành công việc "${item.text}"`
             : `đã đánh dấu chưa hoàn thành "${item.text}"`;
@@ -343,15 +340,6 @@ exports.toggleChecklistItem = async (req, res) => {
     } catch (err) {
         return res.status(500).json({ error: err.message });
     }
-};
-
-exports.getComments = async (req, res) => {
-    res.json([]);
-};
-
-// Lấy Activity
-exports.getActivities = async (req, res) => {
-    res.json([]);
 };
 
 exports.addChecklistItem = async (req, res) => {
@@ -369,16 +357,14 @@ exports.addChecklistItem = async (req, res) => {
             return res.status(404).json({ message: 'Task không tồn tại' });
         }
 
-        // Push item vào mảng checklist
         task.checklist.push({
             text: text.trim(),
             completed: false,
-            taskId: id // Cung cấp taskId theo yêu cầu của checklistItemSchema
+            taskId: id
         });
 
         await task.save();
 
-        // Ghi log hoạt động (bọc try-catch riêng để không ảnh hưởng API)
         try {
             await logActivity(id, currentUserId, `đã thêm mục checklist "${text.trim()}"`);
         } catch (logErr) {
@@ -424,7 +410,6 @@ exports.addComment = async (req, res) => {
         await newComment.save();
         await newComment.populate('user', 'username email name');
 
-        // Ghi log hoạt động khi thêm bình luận
         await logActivity(id, userId, 'đã thêm một bình luận');
 
         return res.status(201).json(newComment);
@@ -452,9 +437,8 @@ exports.getTaskActivities = async (req, res) => {
 
 exports.deleteChecklist = async (req, res) => {
     try {
-        const { id } = req.params; // ID của checklist item cần xóa
+        const { id } = req.params;
 
-        // Tìm Task chứa checklist item này và gỡ (pull) nó ra khỏi mảng checklist
         const updatedTask = await Task.findOneAndUpdate(
             { "checklist._id": id },
             { $pull: { checklist: { _id: id } } },
@@ -475,7 +459,7 @@ exports.deleteChecklist = async (req, res) => {
     }
 };
 
-// Thêm API hoặc bổ sung logic xử lý review task cho Leader
+// REVIEW TASK CHO LEADER / MANAGER
 exports.reviewTask = async (req, res) => {
     try {
         const { id } = req.params;
@@ -485,25 +469,42 @@ exports.reviewTask = async (req, res) => {
         const task = await Task.findById(id);
         if (!task) return res.status(404).json({ message: 'Task không tồn tại' });
 
-        // Tìm danh sách cột trong project để lấy ID cột tương ứng
         const columns = await Column.find({ projectId: task.projectId });
+        const taskPoints = Number(task.point || 0);
+        const assigneeIds = extractAssigneeIds(task.assignees);
 
-        let targetColumn;
-        if (action === 'accept') {
-            // Tìm cột Accepted (hoặc tạo status accepted)
-            targetColumn = columns.find(c => c.name.toLowerCase().includes('accepted') || c.name.toLowerCase().includes('done'));
-        } else if (action === 'not_accept') {
-            // Tìm cột In Review
-            targetColumn = columns.find(c => c.name.toLowerCase().includes('in review') || c.name.toLowerCase().includes('review'));
-        }
+        if (action === 'not_accept') {
+            const reviewColumn = columns.find(c => {
+                const title = (c.title || c.name || '').toLowerCase();
+                return title.includes('in review') || title.includes('review');
+            });
 
-        if (targetColumn) {
-            task.columnId = targetColumn._id;
-            await task.save();
+            if (reviewColumn) {
+                task.columnId = reviewColumn._id;
+                await task.save();
 
-            // Ghi log hoạt động
-            const logMsg = action === 'accept' ? 'đã duyệt task (Accepted)' : 'không duyệt task, chuyển về In Review';
-            await logActivity(id, currentUserId, logMsg);
+                if (taskPoints > 0 && assigneeIds.length > 0 && typeof updateAssigneesPoints === 'function') {
+                    await updateAssigneesPoints(assigneeIds, -taskPoints);
+                }
+
+                await logActivity(id, currentUserId, 'không duyệt task, đã trừ điểm và chuyển về Review');
+            }
+        } else if (action === 'accept') {
+            const doneColumn = columns.find(c => {
+                const title = (c.title || c.name || '').toLowerCase();
+                return title.includes('done') || title.includes('Done') || title.includes('accepted');
+            });
+
+            if (doneColumn) {
+                task.columnId = doneColumn._id;
+                await task.save();
+
+                if (taskPoints > 0 && assigneeIds.length > 0 && typeof updateAssigneesPoints === 'function') {
+                    await updateAssigneesPoints(assigneeIds, taskPoints);
+                }
+
+                await logActivity(id, currentUserId, 'đã duyệt task (Accepted)');
+            }
         }
 
         return res.status(200).json({ message: 'Cập nhật trạng thái thành công', task });
