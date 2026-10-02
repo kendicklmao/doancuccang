@@ -24,6 +24,10 @@ const userSchema = new mongoose.Schema({
         enum: ['User', 'Admin'],
         default: 'User'
     },
+    point: {
+        type: Number,
+        default: 0
+    },
      status: {
         type: String,
         enum: ['Active', 'Inactive'],

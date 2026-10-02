@@ -21,10 +21,7 @@ const memberSchema = new mongoose.Schema({
         ref: 'Project',
         required: true
     },
-    point: {
-        type: Number,
-        default: 0,
-    }
+
 }, { timestamps: true });
 
 module.exports = mongoose.model('Member', memberSchema);

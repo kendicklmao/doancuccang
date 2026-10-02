@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken');
 const Project = require('./../model/project');
 const Column = require('./../model/column');
 const Task = require('./../model/task');
+const mongoose = require('mongoose');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'secretkey_kanban_123';
 
@@ -31,6 +32,7 @@ exports.register = async (req, res) => {
             email: cleanEmail,
             password: hashedPassword,
             role: role || 'Member',
+            point: 0,
         });
 
         await newUser.save();
@@ -80,21 +82,22 @@ exports.login = async (req, res) => {
     }
 };
 exports.GetCurrentUser = async (req, res) => {
-  try {
-    const user = await User.findById(req.user.id).select('-password');
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
+    try {
+        const user = await User.findById(req.user.id).select('-password');
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+        const memberInfor = await Member.findOne({ userId: user._id });
+
+        return res.status(200).json({
+            user, // Trả về đầy đủ thông tin user bao gồm cả `point`
+            userRole: user.role,
+            memberRole: memberInfor ? memberInfor.role : null
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
-    const memberInfor = await Member.findOne({userId : user})
-    // res.json(user);
-    return res.status(200).json({
-        userRole :user.role,
-        memberRole :memberInfor ? memberInfor.role :null
-    })
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-}
+};
 
 exports.getUsers = async (req, res) => {
     try {
@@ -235,5 +238,30 @@ exports.deleteUser = async (req, res) => {
         res.json({ message: 'User and all associated projects, columns, and tasks deleted successfully' });
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+};
+
+exports.updateAssigneesPoints = async (assigneeIds, pointsAmount) => {
+    console.log('===> Đang chạy updateAssigneesPoints với IDs:', assigneeIds, 'Số điểm:', pointsAmount);
+
+    if (!Array.isArray(assigneeIds) || assigneeIds.length === 0 || !pointsAmount) {
+        console.log('===> Bỏ qua vì thiếu IDs hoặc pointsAmount = 0');
+        return;
+    }
+
+    try {
+        // Chuyển danh sách ID sang dạng ObjectId của Mongoose
+        const validObjectIds = assigneeIds
+            .filter(id => mongoose.Types.ObjectId.isValid(id))
+            .map(id => new mongoose.Types.ObjectId(id));
+
+        const result = await User.updateMany(
+            { _id: { $in: validObjectIds } },
+            { $inc: { point: Number(pointsAmount) } }
+        );
+
+        console.log('===> Kết quả updateMany:', result);
+    } catch (error) {
+        console.error('Lỗi khi cập nhật điểm cho assignees:', error);
     }
 };
