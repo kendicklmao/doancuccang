@@ -16,6 +16,11 @@ const memberSchema = new mongoose.Schema({
         enum: ['Active', 'Inactive'],
         default: 'Active'
     },
+    projectId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Project',
+        required: true
+    },
     point: {
         type: Number,
         default: 0,

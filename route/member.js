@@ -4,9 +4,9 @@ const memberController = require('./../controller/member');
 const { verifyToken, checkRole } = require('../middleware/auth');
 
 memberRouter.get('/', memberController.getMembers);
-memberRouter.get('/:id', memberController.getMemberById);
+memberRouter.get('/project/:id', memberController.getMembersByProject);
 memberRouter.post('/invite',  memberController.inviteMember);
 memberRouter.put('/:id', memberController.updateMember);
-memberRouter.delete('/:id', verifyToken, memberController.deleteMember);
+memberRouter.delete('/:id/project/:id', verifyToken, memberController.deleteMember);
 
 module.exports = memberRouter;

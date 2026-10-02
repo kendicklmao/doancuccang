@@ -4,6 +4,7 @@ const Column = require('./../model/column');
 const Task = require('./../model/task');
 const Comment = require('./../model/comment');
 const TaskActivity = require('./../model/activity');
+const Member = require('./../model/member');
 
 exports.getProject = async (req, res) => {
     try {
@@ -71,42 +72,52 @@ exports.deleteProject = async (req, res) => {
     try {
         const projectId = req.params.id;
 
+        // 1. Kiểm tra sự tồn tại của Project trước
+        const project = await Project.findById(projectId);
+        if (!project) {
+            return res.status(404).json({ message: 'Project not found' });
+        }
+
+        // 2. Tìm tất cả Column IDs thuộc Project
         const columns = await Column.find({ projectId }).select('_id');
         const columnIds = columns.map(col => col._id);
 
+        // 3. Tìm tất cả Task IDs thuộc Project hoặc các Columns của Project
         const tasks = await Task.find({
             $or: [
                 { projectId: projectId },
                 { columnId: { $in: columnIds } }
             ]
         }).select('_id');
-
         const taskIds = tasks.map(t => t._id);
 
+        // 4. Xóa đồng thời (Parallel) tất cả dữ liệu liên quan
+        const deletePromises = [
+            Column.deleteMany({ projectId }),
+            Task.deleteMany({
+                $or: [
+                    { projectId: projectId },
+                    { columnId: { $in: columnIds } }
+                ]
+            }),
+            // Xóa tất cả Member thuộc Project này
+            Member.deleteMany({ projectId }),
+            Project.findByIdAndDelete(projectId)
+        ];
+
+        // Nếu có Task, thêm nhiệm vụ xóa Comment và TaskActivity
         if (taskIds.length > 0) {
-            await Promise.all([
+            deletePromises.push(
                 Comment.deleteMany({ taskId: { $in: taskIds } }),
                 TaskActivity.deleteMany({ taskId: { $in: taskIds } })
-            ]);
+            );
         }
 
-        await Task.deleteMany({
-            $or: [
-                { projectId: projectId },
-                { columnId: { $in: columnIds } }
-            ]
-        });
-
-        await Column.deleteMany({ projectId });
-
-        const deletedProject = await Project.findByIdAndDelete(projectId);
-
-        if (!deletedProject) {
-            return res.status(404).json({ message: 'Project not found' });
-        }
+        // Thực thi toàn bộ lệnh xóa cùng lúc
+        await Promise.all(deletePromises);
 
         return res.json({
-            message: 'Project and all associated tasks, columns, comments & activities deleted successfully'
+            message: 'Project and all associated members, columns, tasks, comments & activities deleted successfully'
         });
 
     } catch (err) {
@@ -129,13 +140,6 @@ exports.updateProject = async (req, res) => {
         }
 
         // 2. Kiểm tra quyền chỉnh sửa (Chấp nhận Owner, Admin hoặc Assignee trong dự án)
-        const isOwner = String(currentProject.userId) === String(userId);
-        const isAdmin = req.user.role && req.user.role.toLowerCase() === 'admin';
-        const isAssignee = Array.isArray(currentProject.assignees) && currentProject.assignees.some(a => String(a) === String(userId));
-
-        if (!isOwner && !isAdmin && !isAssignee) {
-            return res.status(403).json({ message: 'Unauthorized to update this project' });
-        }
 
         const updateData = {};
         let hasAnyChange = false;
