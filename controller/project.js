@@ -26,7 +26,7 @@ exports.getProject = async (req, res) => {
 
 exports.createProject = async (req, res) => {
     try {
-        const { name, description, color, date, assignees } = req.body;
+        const { name, description, color, startDate, date, assignees } = req.body;
         const userId = req.user.id;
 
         if (!name || !name.trim()) {
@@ -42,6 +42,7 @@ exports.createProject = async (req, res) => {
             name: name.trim(),
             description,
             color,
+            startDate: startDate || new Date(),
             date,
             userId,
             assignees: safeAssignees
@@ -129,17 +130,14 @@ exports.deleteProject = async (req, res) => {
 // HÀM UPDATE PROJECT ĐÃ ĐƯỢC SỬA ĐỔI
 exports.updateProject = async (req, res) => {
     try {
-        const { name, description, color, date, dueDate, assignees } = req.body;
+        const { name, description, color, startDate, date, dueDate, assignees } = req.body;
         const projectId = req.params.id;
-        const userId = req.user.id || req.user._id;
 
         // 1. Kiểm tra project có tồn tại không
         const currentProject = await Project.findById(projectId);
         if (!currentProject) {
             return res.status(404).json({ message: 'Project not found' });
         }
-
-        // 2. Kiểm tra quyền chỉnh sửa (Chấp nhận Owner, Admin hoặc Assignee trong dự án)
 
         const updateData = {};
         let hasAnyChange = false;
@@ -163,6 +161,17 @@ exports.updateProject = async (req, res) => {
         if (color !== undefined && color !== currentProject.color) {
             updateData.color = color;
             hasAnyChange = true;
+        }
+
+        // Cập nhật startDate
+        if (startDate !== undefined && startDate !== null) {
+            const newStartDate = new Date(startDate).getTime();
+            const currentStartDate = currentProject.startDate ? new Date(currentProject.startDate).getTime() : 0;
+
+            if (!isNaN(newStartDate) && newStartDate !== currentStartDate) {
+                updateData.startDate = startDate;
+                hasAnyChange = true;
+            }
         }
 
         // Cập nhật Date / DueDate

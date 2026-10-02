@@ -88,7 +88,7 @@ exports.getTasksByProject = async (req, res) => {
 
 exports.createTask = async (req, res) => {
     try {
-        const { title, description, columnId, projectId, assignees, priority, date, point } = req.body;
+        const { title, description, columnId, projectId, assignees, priority, startDate, date, point } = req.body;
         const currentUserId = req.user ? (req.user.id || req.user._id) : null;
 
         if (!title || !title.trim()) {
@@ -107,6 +107,7 @@ exports.createTask = async (req, res) => {
             projectId: projectId,
             assignees: Array.isArray(assignees) ? assignees : [],
             priority: priority || 'Medium',
+            startDate: startDate || new Date(),
             date: date || new Date(),
             point: pointVal
         };
@@ -170,6 +171,8 @@ exports.updateTask = async (req, res) => {
             await logActivity(taskId, currentUserId, `đã chuyển task sang cột "${colName}"`);
         } else if (req.body.priority && req.body.priority !== task.priority) {
             await logActivity(taskId, currentUserId, `đã đổi mức độ ưu tiên thành ${req.body.priority}`);
+        } else if (req.body.startDate && req.body.startDate !== task.startDate) {
+            await logActivity(taskId, currentUserId, 'đã cập nhật ngày bắt đầu');
         } else if (req.body.description !== undefined && req.body.description !== task.description) {
             await logActivity(taskId, currentUserId, 'đã cập nhật mô tả task');
         } else {

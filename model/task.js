@@ -35,9 +35,9 @@ const taskSchema = new mongoose.Schema({
         default: 0
     },
 
-    date: {
-        type: Date,
-        default: Date.now
+    week: {
+        type: Number,
+        default: 1
     },
     status: {
         type: String,
