@@ -197,3 +197,46 @@ exports.updateMembersPoints = async (memberIds, pointsAmount) => {
         throw error;
     }
 };
+
+exports.getMembersWithWeeklyPoints = async (req, res) => {
+    try {
+        const { projectId } = req.params;
+        const week = Number(req.query.week) || 1; // Mặc định lấy week 1 nếu không truyền
+
+        // 1. Lấy danh sách Member trong Project (populate User để lấy username, email, _id)
+        const members = await Member.find({ projectId }).populate('userId', 'username email points');
+
+        // 2. Lấy tất cả Task của Project thuộc week này
+        const tasksInWeek = await Task.find({
+            projectId,
+            week: week
+        });
+
+        // 3. Tính tổng point cho từng Member trong week này
+        const membersWithPoints = members.map(member => {
+            const memberObj = member.toObject();
+            const currentUserId = member.userId?._id?.toString() || member.userId?.toString();
+
+            // Lọc ra các task trong week này mà user này được assign
+            const userTasks = tasksInWeek.filter(task =>
+                task.assignees && task.assignees.some(assigneeId => assigneeId.toString() === currentUserId)
+            );
+
+            // Tính tổng điểm các task đó (Có thể lọc thêm theo status === 'completed' nếu chỉ tính task đã hoàn thành)
+            const weeklyPoint = userTasks.reduce((sum, task) => sum + (task.point || 0), 0);
+
+            return {
+                ...memberObj,
+                weeklyPoint // Trả về số điểm riêng của tuần này
+            };
+        });
+
+        return res.status(200).json({
+            success: true,
+            week,
+            data: membersWithPoints
+        });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: 'Lỗi server', error: error.message });
+    }
+};

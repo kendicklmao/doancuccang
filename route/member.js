@@ -8,5 +8,6 @@ memberRouter.get('/project/:id', memberController.getMembersByProject);
 memberRouter.post('/invite',  memberController.inviteMember);
 memberRouter.put('/:id', memberController.updateMember);
 memberRouter.delete('/:id/project/:id', verifyToken, memberController.deleteMember);
+memberRouter.get('/project/:id/weekly-points', verifyToken, memberController.getMembersWithWeeklyPoints);
 
 module.exports = memberRouter;
