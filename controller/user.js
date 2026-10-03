@@ -52,6 +52,9 @@ exports.login = async (req, res) => {
         if (!user) {
             return res.status(400).json({ message: 'email or password not available' });
         }
+        if (user.status === "Inactive") {
+            return res.status(403).json({ message: "Account banned" });
+        }
 
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) {
