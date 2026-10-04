@@ -398,35 +398,38 @@ exports.updateProjectDetail = async (req, res) => {
 
 exports.uploadProjectDocument = async (req, res) => {
     try {
-        if (!req.file) {
-            return res.status(400).json({ message: 'Vui lòng chọn file để tải lên' });
+        // Multer lưu danh sách file vào req.files
+        if (!req.files || req.files.length === 0) {
+            return res.status(400).json({ message: 'Vui lòng chọn ít nhất một file để tải lên' });
         }
-
-        // Fix lỗi font tiếng Việt: Chuyển mã hóa latin1 sang UTF-8
-        const correctedFileName = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
 
         const projectId = req.params.id;
 
-        const newDocument = {
-            name: correctedFileName, // Sử dụng tên file đã fix lỗi font
-            url: `/uploads/${req.file.filename}`,
-            uploadedBy: req.user.id || req.user._id,
-            createdAt: new Date()
-        };
+        // Lặp qua mảng file gửi lên và xử lý tên tiếng Việt
+        const newDocuments = req.files.map(file => {
+            const correctedName = Buffer.from(file.originalname, 'latin1').toString('utf8');
+            return {
+                name: correctedName,
+                url: `/uploads/${file.filename}`,
+                uploadedBy: req.user.id || req.user._id,
+                createdAt: new Date()
+            };
+        });
 
+        // Push toàn bộ danh sách file mới vào mảng documents trong DB
         const project = await Project.findByIdAndUpdate(
             projectId,
-            { $push: { documents: newDocument } },
+            { $push: { documents: {$each: newDocuments } } },
             { new: true }
         ).populate('documents.uploadedBy', 'username email');
 
         return res.status(200).json({
-            message: 'Tải tài liệu lên thành công',
+            message: 'Tải các tài liệu lên thành công',
             documents: project.documents
         });
 
     } catch (error) {
-        console.error('Lỗi upload file:', error);
+        console.error('Lỗi upload nhiều file:', error);
         return res.status(500).json({ message: 'Lỗi máy chủ khi tải file lên' });
     }
 };

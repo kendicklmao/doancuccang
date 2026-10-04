@@ -28,12 +28,8 @@ projectRouter.delete("/:id/assignees/:memberUserId", verifyToken, controller.rem
 
 projectRouter.put('/:id/project-detail', verifyToken, controller.updateProjectDetail);
 
-projectRouter.post("/:id/documents/upload", verifyToken,  upload.single("file"),controller.uploadProjectDocument);
+projectRouter.post("/:id/documents/upload", verifyToken, upload.array('files', 10), controller.uploadProjectDocument);
 
-projectRouter.delete(
-    "/:id/documents/:documentId",
-    verifyToken,
-    controller.removeProjectDocument
-);
+projectRouter.delete("/:id/documents/:documentId", verifyToken, controller.removeProjectDocument);
 
 module.exports = projectRouter;
