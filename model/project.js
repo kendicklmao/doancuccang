@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const documentSchema = require('./document');
 
 const projectSchema = new mongoose.Schema({
     name: {
@@ -30,7 +31,12 @@ const projectSchema = new mongoose.Schema({
     assignees: [{
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Member',
-    }]
+    }],
+    documents: [documentSchema],
+    projectDetail: {
+        type: String,
+        default: ''
+    }
 }, { timestamps: true });
 
 module.exports = mongoose.model('Project', projectSchema);

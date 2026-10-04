@@ -366,3 +366,95 @@ exports.removeProjectAssignee = async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 };
+
+// 1. Cập nhật projectDetail (Mô tả chi tiết dự án)
+exports.updateProjectDetail = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { projectDetail } = req.body;
+
+        const updatedProject = await Project.findByIdAndUpdate(
+            id,
+            { projectDetail: projectDetail || '' },
+            { new: true, runValidators: true }
+        );
+
+        if (!updatedProject) {
+            return res.status(404).json({ message: 'Project not found' });
+        }
+
+        return res.status(200).json({
+            message: 'Project detail updated successfully',
+            project: updatedProject
+        });
+    } catch (err) {
+        console.error("Lỗi updateProjectDetail:", err);
+        return res.status(500).json({ error: err.message });
+    }
+};
+
+// 2. Upload File tài liệu từ máy tính
+// controller/project.js - Tại hàm uploadProjectDocument
+
+exports.uploadProjectDocument = async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ message: 'Vui lòng chọn file để tải lên' });
+        }
+
+        // Fix lỗi font tiếng Việt: Chuyển mã hóa latin1 sang UTF-8
+        const correctedFileName = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+
+        const projectId = req.params.id;
+
+        const newDocument = {
+            name: correctedFileName, // Sử dụng tên file đã fix lỗi font
+            url: `/uploads/${req.file.filename}`,
+            uploadedBy: req.user.id || req.user._id,
+            createdAt: new Date()
+        };
+
+        const project = await Project.findByIdAndUpdate(
+            projectId,
+            { $push: { documents: newDocument } },
+            { new: true }
+        ).populate('documents.uploadedBy', 'username email');
+
+        return res.status(200).json({
+            message: 'Tải tài liệu lên thành công',
+            documents: project.documents
+        });
+
+    } catch (error) {
+        console.error('Lỗi upload file:', error);
+        return res.status(500).json({ message: 'Lỗi máy chủ khi tải file lên' });
+    }
+};
+
+// 3. Xóa Document khỏi Project
+exports.removeProjectDocument = async (req, res) => {
+    try {
+        const { id, documentId } = req.params;
+
+        const updatedProject = await Project.findByIdAndUpdate(
+            id,
+            { $pull: { documents: { _id: documentId } } },
+            { new: true }
+        ).populate({
+            path: 'documents.uploadedBy',
+            select: 'username email avatar'
+        });
+
+        if (!updatedProject) {
+            return res.status(404).json({ message: 'Project not found' });
+        }
+
+        return res.status(200).json({
+            message: 'Document removed successfully',
+            documents: updatedProject.documents
+        });
+    } catch (err) {
+        console.error("Lỗi removeProjectDocument:", err);
+        return res.status(500).json({ error: err.message });
+    }
+};

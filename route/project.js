@@ -3,6 +3,7 @@ const projectRouter = express.Router();
 const controller = require("./../controller/project");
 // Destructuring verifyToken và checkRole từ middleware auth mới
 const { verifyToken, checkRole } = require('../middleware/auth');
+const upload = require("../middleware/file");
 
 // 1. Tạo dự án mới: Chỉ dành cho Manager
 projectRouter.post("/", verifyToken, controller.createProject);
@@ -24,5 +25,15 @@ projectRouter.get("/:id/assignees", verifyToken, controller.getProjectAssignees)
 
 // 7. Xóa thành viên khỏi dự án: Chỉ dành cho Manager
 projectRouter.delete("/:id/assignees/:memberUserId", verifyToken, controller.removeProjectAssignee);
+
+projectRouter.put('/:id/project-detail', verifyToken, controller.updateProjectDetail);
+
+projectRouter.post("/:id/documents/upload", verifyToken,  upload.single("file"),controller.uploadProjectDocument);
+
+projectRouter.delete(
+    "/:id/documents/:documentId",
+    verifyToken,
+    controller.removeProjectDocument
+);
 
 module.exports = projectRouter;

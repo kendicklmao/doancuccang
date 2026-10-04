@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node --watch index.js",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build":""
+    "build": ""
   },
   "repository": {
     "type": "git",
@@ -27,6 +27,7 @@
     "express": "^5.2.1",
     "express-session": "^1.19.0",
     "jsonwebtoken": "^9.0.3",
-    "mongoose": "^9.10.1"
+    "mongoose": "^9.10.1",
+    "multer": "^2.4.0"
   }
 }
