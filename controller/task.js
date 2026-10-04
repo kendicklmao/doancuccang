@@ -540,3 +540,106 @@ exports.getMyTasks = async (req, res) => {
         });
     }
 }
+
+exports.getTaskCountByWeek = async (req, res) => {
+    try {
+        const { projectId } = req.params;
+
+        if (!mongoose.Types.ObjectId.isValid(projectId)) {
+            return res.status(400).json({ success: false, message: 'Invalid Project ID' });
+        }
+
+        // Dùng Aggregate để nhóm task theo week và đếm số lượng
+        const result = await Task.aggregate([
+            {
+                $match: {
+                    projectId: new mongoose.Types.ObjectId(projectId)
+                }
+            },
+            {
+                $group: {
+                    _id: "$week",         // Nhóm theo số tuần (1, 2, 3,...)
+                    count: { $sum: 1 }    // Đếm số task
+                }
+            },
+            {
+                $sort: { _id: 1 }         // Sắp xếp tăng dần theo tuần
+            }
+        ]);
+
+        // Định dạng dữ liệu trả về cho Frontend
+        const formattedData = result.map(item => ({
+            week: item._id ? `Tuần ${item._id}` : 'Chưa phân tuần',
+            weekNumber: item._id || 0,
+            tasks: item.count
+        }));
+
+        return res.status(200).json({
+            success: true,
+            data: formattedData
+        });
+    } catch (error) {
+        console.error("Error fetching tasks by week:", error);
+        return res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+exports.getTaskCountByStatus = async (req, res) => {
+    try {
+        const { projectId } = req.params;
+
+        // 1. Lấy tất cả task thuộc projectId và populate thông tin column (để lấy position)
+        const tasks = await Task.find({ projectId }).populate('columnId', 'position title');
+
+        // 2. Khởi tạo bộ đếm cho 5 trạng thái
+        const counts = {
+            Backlog: 0,
+            'To Do': 0,
+            'In Progress': 0,
+            Review: 0,
+            Done: 0
+        };
+
+        // 3. Duyệt qua từng task để phân loại theo position
+        tasks.forEach(task => {
+            if (!task.columnId) {
+                // columnId null -> Backlog
+                counts['Backlog']++;
+            } else {
+                const position = task.columnId.position;
+                switch (position) {
+                    case 0:
+                        counts['To Do']++;
+                        break;
+                    case 1:
+                        counts['In Progress']++;
+                        break;
+                    case 2:
+                        counts['Review']++;
+                        break;
+                    case 3:
+                        counts['Done']++;
+                        break;
+                    default:
+                        // Trường hợp mở rộng nếu có cột khác
+                        counts['Backlog']++;
+                        break;
+                }
+            }
+        });
+
+        // 4. Định dạng dữ liệu trả về cho Frontend (khớp màu sắc theo phác thảo)
+        const chartData = [
+            { status: 'Backlog', tasks: counts['Backlog'], color: '#ef4444' },     // Đỏ
+            { status: 'To Do', tasks: counts['To Do'], color: '#3b82f6' },         // Xanh dương
+            { status: 'In Progress', tasks: counts['In Progress'], color: '#22c55e' }, // Xanh lá
+            { status: 'Review', tasks: counts['Review'], color: '#06b6d4' },       // Cyan
+            { status: 'Done', tasks: counts['Done'], color: '#a855f7' }            // Tím
+        ];
+
+        return res.status(200).json({ success: true, data: chartData });
+    } catch (error) {
+        console.error("Error fetching chart data:", error);
+        return res.status(500).json({ success: false, message: 'Lỗi server' });
+    }
+};

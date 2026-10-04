@@ -45,4 +45,8 @@ taskRouter.get('/:id/activity', verifyToken, controller.getTaskActivities);
 
 taskRouter.delete('/:id/checklist/:itemId', verifyToken, controller.deleteChecklist);
 
+taskRouter.get('/project/:projectId/tasks-by-week', verifyToken, controller.getTaskCountByWeek);
+
+taskRouter.get('/project/:projectId/tasks-by-status', verifyToken, controller.getTaskCountByStatus);
+
 module.exports = taskRouter;
