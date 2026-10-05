@@ -4,6 +4,7 @@ const controller = require("./../controller/project");
 // Destructuring verifyToken và checkRole từ middleware auth mới
 const { verifyToken, checkRole } = require('../middleware/auth');
 const upload = require("../middleware/file");
+projectRouter.get('/portfolio',verifyToken,controller.Portfolio);
 
 // 1. Tạo dự án mới: Chỉ dành cho Manager
 projectRouter.post("/", verifyToken, controller.createProject);

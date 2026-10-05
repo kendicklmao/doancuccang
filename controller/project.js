@@ -463,3 +463,49 @@ exports.removeProjectDocument = async (req, res) => {
 };
 
 
+exports.Portfolio = async (req, res) => {
+    try {
+        // 1. Tính tổng số dự án và tổng ngân sách bằng Aggregation
+        const projectStats = await Project.aggregate([
+            {
+                $group: {
+                    _id: null,
+                    totalProjects: { $sum: 1 },
+                    totalBudget: { $sum: '$budget' } // Tính tổng dựa trên trường budget (nếu chưa có sẽ bằng 0)
+                }
+            }
+        ]);
+
+        // 2. Tính toán tổng số lượng task và số lượng task đã hoàn thành (status: "done")
+        const taskStats = await Task.aggregate([
+            {
+                $group: {
+                    _id: null,
+                    totalTasks: { $sum: 1 },
+                    completedTasks: { $sum: { $cond: [{ $eq: ['$status', 'done'] }, 1, 0] } }
+                }
+            }
+        ]);
+
+        // GIẢI PHÁP AN TOÀN: Kiểm tra mảng tồn tại và có phần tử để tránh lỗi sập 500
+        const pStats = (projectStats && projectStats.length > 0) ? projectStats[0] : { totalProjects: 0, totalBudget: 0 };
+        const tStats = (taskStats && taskStats.length > 0) ? taskStats[0] : { totalTasks: 0, completedTasks: 0 };
+
+        // Tính tỷ lệ % (Nếu hệ thống chưa có task nào thì mặc định hiển thị là 100%)
+        const onTimeRate = tStats.totalTasks > 0 
+            ? ((tStats.completedTasks / tStats.totalTasks) * 100).toFixed(1) 
+            : 100;
+
+        // Trả kết quả JSON sạch về cho ứng dụng React
+        return res.status(200).json({
+            totalProjects: pStats.totalProjects || 0,
+            totalBudget: pStats.totalBudget || 0,
+            onTimeRate: parseFloat(onTimeRate)
+        });
+
+    } catch (error) {
+        // Log chi tiết ra màn hình terminal của Node.js để bạn quan sát trực tiếp
+        console.error("CHI TIẾT LỖI TẠI BACKEND PORTFOLIO:", error.message); 
+        return res.status(500).json({ message: "Lỗi hệ thống tính toán dữ liệu Portfolio", error: error.message });
+    }
+};
