@@ -12,7 +12,12 @@ const allowedOrigins = [
 ];
 
 const path = require('path');
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
+  setHeaders: (res, filePath) => {
+    // Đảm bảo hỗ trợ hiển thị/tải xuống tệp đúng mã hóa
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+}));
 
 // Chỉ giữ lại 1 middleware CORS duy nhất này:
 app.use(cors({
