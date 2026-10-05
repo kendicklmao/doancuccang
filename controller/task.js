@@ -3,6 +3,8 @@ const Column = require('./../model/column');
 const Project = require('./../model/project');
 const Comment = require('../model/Comment');
 const TaskActivity = require('../model/activity');
+const mongoose = require('mongoose');
+const { getIO } = require('../socket'); // Import hàm lấy phiên bản socket.io
 
 // Import helper updating user points
 const { updateAssigneesPoints } = require('./user');
@@ -142,6 +144,13 @@ exports.createTask = async (req, res) => {
             await logActivity(newTask._id, currentUserId, 'created this task').catch(() => {});
         }
 
+        // 🟢 SOCKET: Phát sự kiện tạo task mới cho tất cả client trong dự án
+        try {
+            getIO().to(`project_${projectId}`).emit("task_created", newTask);
+        } catch (socketErr) {
+            console.error("Socket emit error (createTask):", socketErr.message);
+        }
+
         return res.status(201).json(newTask);
 
     } catch (err) {
@@ -192,6 +201,13 @@ exports.updateTask = async (req, res) => {
             await logActivity(taskId, currentUserId, 'updated task details');
         }
 
+        // 🟢 SOCKET: Bắn sự kiện task_updated cho cả project
+        try {
+            getIO().to(`project_${task.projectId}`).emit("task_updated", updatedTask);
+        } catch (socketErr) {
+            console.error("Socket emit error (updateTask):", socketErr.message);
+        }
+
         res.json(updatedTask);
     } catch (err) {
         console.error("Error updating task:", err);
@@ -224,6 +240,13 @@ exports.deleteTask = async (req, res) => {
         if (column && Array.isArray(column.taskOrderIds)) {
             column.taskOrderIds = column.taskOrderIds.filter(id => id.toString() !== taskId.toString());
             await column.save();
+        }
+
+        // 🟢 SOCKET: Bắn sự kiện task_deleted cho cả project
+        try {
+            getIO().to(`project_${task.projectId}`).emit("task_deleted", { taskId });
+        } catch (socketErr) {
+            console.error("Socket emit error (deleteTask):", socketErr.message);
         }
 
         return res.json({ message: 'Task deleted successfully', id: taskId });
@@ -294,6 +317,18 @@ exports.moveTask = async (req, res) => {
             await logActivity(taskId, currentUserId, `moved task to column "${destCol.title || destCol.name}"`);
         }
 
+        // 🟢 SOCKET: Bắn sự kiện task_moved tới phòng của Project này
+        try {
+            getIO().to(`project_${task.projectId}`).emit("task_moved", {
+                taskId,
+                sourceColumnId,
+                destColumnId,
+                destinationIndex
+            });
+        } catch (socketErr) {
+            console.error("Socket emit error (moveTask):", socketErr.message);
+        }
+
         return res.status(200).json({ message: 'Task position updated successfully', taskId });
     } catch (err) {
         console.error('Error moving task:', err);
@@ -333,6 +368,13 @@ exports.toggleChecklistItem = async (req, res) => {
             : `marked item "${item.text}" as uncompleted`;
         await logActivity(id, currentUserId, actionMsg);
 
+        // 🟢 SOCKET
+        try {
+            getIO().to(`project_${task.projectId}`).emit("task_updated", updatedTask);
+        } catch (socketErr) {
+            console.error("Socket emit error:", socketErr.message);
+        }
+
         return res.status(200).json(updatedTask);
     } catch (err) {
         return res.status(500).json({ error: err.message });
@@ -368,6 +410,13 @@ exports.addChecklistItem = async (req, res) => {
             console.error('LogActivity error:', logErr.message);
         }
 
+        // 🟢 SOCKET
+        try {
+            getIO().to(`project_${task.projectId}`).emit("task_updated", task);
+        } catch (socketErr) {
+            console.error("Socket emit error:", socketErr.message);
+        }
+
         return res.status(200).json(task);
     } catch (err) {
         console.error('AddChecklistItem error:', err);
@@ -387,6 +436,13 @@ exports.deleteChecklist = async (req, res) => {
 
         if (!updatedTask) {
             return res.status(404).json({ message: 'Checklist item not found' });
+        }
+
+        // 🟢 SOCKET
+        try {
+            getIO().to(`project_${updatedTask.projectId}`).emit("task_updated", updatedTask);
+        } catch (socketErr) {
+            console.error("Socket emit error:", socketErr.message);
         }
 
         return res.status(200).json({
@@ -423,6 +479,8 @@ exports.addComment = async (req, res) => {
             return res.status(400).json({ message: 'Comment content is required' });
         }
 
+        const task = await Task.findById(id);
+
         const newComment = new Comment({
             taskId: id,
             user: userId,
@@ -433,6 +491,15 @@ exports.addComment = async (req, res) => {
         await newComment.populate('user', 'username email name');
 
         await logActivity(id, userId, 'added a comment');
+
+        // 🟢 SOCKET: Phát sự kiện thêm comment mới
+        if (task) {
+            try {
+                getIO().to(`project_${task.projectId}`).emit("comment_added", newComment);
+            } catch (socketErr) {
+                console.error("Socket emit error (addComment):", socketErr.message);
+            }
+        }
 
         return res.status(201).json(newComment);
     } catch (err) {
@@ -508,38 +575,43 @@ exports.reviewTask = async (req, res) => {
             }
         }
 
+        // 🟢 SOCKET: Bắn sự kiện task_reviewed
+        try {
+            getIO().to(`project_${task.projectId}`).emit("task_reviewed", { taskId: id, action, task });
+        } catch (socketErr) {
+            console.error("Socket emit error (reviewTask):", socketErr.message);
+        }
+
         return res.status(200).json({ message: 'Status updated successfully', task });
     } catch (err) {
         return res.status(500).json({ error: err.message });
     }
 };
 
-
-
 exports.getMyTasks = async (req, res) => {
     try {
-        const currentUserId = req.user.id; 
+        const currentUserId = req.user.id;
 
         const myTasks = await Task.find({ assignees: currentUserId })
             .populate({
                 path: 'projectId',
-                select: 'name color description' 
+                select: 'name color description'
             })
             .populate({
                 path: 'columnId',
-                select: 'title position' 
+                select: 'title position'
             })
-            .sort({ updatedAt: -1 }); 
+            .sort({ updatedAt: -1 });
         return res.status(200).json(myTasks);
-        
+
     } catch (error) {
         console.error("Lỗi tại getMyTasks Controller:", error);
-        return res.status(500).json({ 
-            message: 'Đã xảy ra lỗi hệ thống khi lấy danh sách công việc!', 
-            error: error.message 
+        return res.status(500).json({
+            message: 'Đã xảy ra lỗi hệ thống khi lấy danh sách công việc!',
+            error: error.message
         });
     }
-}
+};
 
 exports.getTaskCountByWeek = async (req, res) => {
     try {
@@ -549,7 +621,6 @@ exports.getTaskCountByWeek = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Invalid Project ID' });
         }
 
-        // Dùng Aggregate để nhóm task theo week và đếm số lượng
         const result = await Task.aggregate([
             {
                 $match: {
@@ -558,16 +629,11 @@ exports.getTaskCountByWeek = async (req, res) => {
             },
             {
                 $group: {
-                    _id: "$week",         // Nhóm theo số tuần (1, 2, 3,...)
-                    count: { $sum: 1 }    // Đếm số task
-                }
-            },
-            {
-                $sort: { _id: 1 }         // Sắp xếp tăng dần theo tuần
+                    _id: "$week",
+                    count: { $sum: 1 }                 }             },             {$sort: { _id: 1 }
             }
         ]);
 
-        // Định dạng dữ liệu trả về cho Frontend
         const formattedData = result.map(item => ({
             week: item._id ? `Tuần ${item._id}` : 'Chưa phân tuần',
             weekNumber: item._id || 0,
@@ -588,10 +654,8 @@ exports.getTaskCountByStatus = async (req, res) => {
     try {
         const { projectId } = req.params;
 
-        // 1. Lấy tất cả task thuộc projectId và populate thông tin column (để lấy position)
         const tasks = await Task.find({ projectId }).populate('columnId', 'position title');
 
-        // 2. Khởi tạo bộ đếm cho 5 trạng thái
         const counts = {
             Backlog: 0,
             'To Do': 0,
@@ -600,10 +664,8 @@ exports.getTaskCountByStatus = async (req, res) => {
             Done: 0
         };
 
-        // 3. Duyệt qua từng task để phân loại theo position
         tasks.forEach(task => {
             if (!task.columnId) {
-                // columnId null -> Backlog
                 counts['Backlog']++;
             } else {
                 const position = task.columnId.position;
@@ -621,20 +683,18 @@ exports.getTaskCountByStatus = async (req, res) => {
                         counts['Done']++;
                         break;
                     default:
-                        // Trường hợp mở rộng nếu có cột khác
                         counts['Backlog']++;
                         break;
                 }
             }
         });
 
-        // 4. Định dạng dữ liệu trả về cho Frontend (khớp màu sắc theo phác thảo)
         const chartData = [
-            { status: 'Backlog', tasks: counts['Backlog'], color: '#ef4444' },     // Đỏ
-            { status: 'To Do', tasks: counts['To Do'], color: '#3b82f6' },         // Xanh dương
-            { status: 'In Progress', tasks: counts['In Progress'], color: '#22c55e' }, // Xanh lá
-            { status: 'Review', tasks: counts['Review'], color: '#06b6d4' },       // Cyan
-            { status: 'Done', tasks: counts['Done'], color: '#a855f7' }            // Tím
+            { status: 'Backlog', tasks: counts['Backlog'], color: '#ef4444' },
+            { status: 'To Do', tasks: counts['To Do'], color: '#3b82f6' },
+            { status: 'In Progress', tasks: counts['In Progress'], color: '#22c55e' },
+            { status: 'Review', tasks: counts['Review'], color: '#06b6d4' },
+            { status: 'Done', tasks: counts['Done'], color: '#a855f7' }
         ];
 
         return res.status(200).json({ success: true, data: chartData });
