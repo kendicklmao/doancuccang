@@ -3,23 +3,21 @@ const app = express();
 const cors = require("cors");
 const session = require("express-session");
 
-// Cho phép nhiều origin (ví dụ frontend chạy ở 5173, 5179, 5185...)
+// Cho phép nhiều origin
 const allowedOrigins = [
   "http://localhost:5180",
   "http://localhost:5174",
-  "http://localhost:5173",//laam
-    "http://localhost:5174"//laam
+  "http://localhost:5173"
 ];
 
 const path = require('path');
 app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
   setHeaders: (res, filePath) => {
-    // Đảm bảo hỗ trợ hiển thị/tải xuống tệp đúng mã hóa
     res.setHeader('Access-Control-Allow-Origin', '*');
   }
 }));
 
-// Chỉ giữ lại 1 middleware CORS duy nhất này:
+// CORS middleware
 app.use(cors({
   origin: function (origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) {
@@ -42,7 +40,6 @@ app.use(session({
   }
 }));
 
-// Đặt express.json() trước khi load router
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(express.static("public"));
@@ -54,4 +51,5 @@ app.get("/", (req, res) => {
   res.sendFile(__dirname + "/public/index.html");
 });
 
-module.exports = app;
+// SỬA TẠI ĐÂY: Export cả app và allowedOrigins
+module.exports = { app, allowedOrigins };
