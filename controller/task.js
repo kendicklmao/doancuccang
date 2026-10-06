@@ -310,7 +310,10 @@ exports.moveTask = async (req, res) => {
         destOrder.splice(validIndex, 0, taskId);
         destCol.taskOrderIds = destOrder;
 
+        // Cập nhật columnId và reset mốc updatedAt về thời điểm chuyển cột mới
         task.columnId = destColumnId;
+        task.updatedAt = new Date();
+
         await Promise.all([destCol.save(), task.save()]);
 
         if (currentUserId) {
@@ -548,6 +551,7 @@ exports.reviewTask = async (req, res) => {
             if (reviewColumn) {
                 task.columnId = reviewColumn._id;
                 task.status = 'pending';
+                task.updatedAt = new Date();
                 await task.save();
 
                 if (taskPoints > 0 && assigneeIds.length > 0 && typeof updateAssigneesPoints === 'function') {
@@ -565,6 +569,7 @@ exports.reviewTask = async (req, res) => {
             if (doneColumn) {
                 task.columnId = doneColumn._id;
                 task.status = 'completed';
+                task.updatedAt = new Date();
                 await task.save();
 
                 if (taskPoints > 0 && assigneeIds.length > 0 && typeof updateAssigneesPoints === 'function') {
@@ -704,7 +709,6 @@ exports.getTaskCountByStatus = async (req, res) => {
     }
 };
 
-
 // 3. Cycle Time By Week
 exports.getCycleTimeByWeek = async (req, res) => {
     try {
@@ -752,7 +756,7 @@ exports.getCycleTimeByWeek = async (req, res) => {
     }
 };
 
-// // 4. Epic Burndown Chart
+// 4. Epic Burndown Chart
 exports.getEpicBurndown = async (req, res) => {
     try {
         const { projectId } = req.params;
@@ -767,7 +771,7 @@ exports.getEpicBurndown = async (req, res) => {
                     _id: "$week",
                     totalPoints: { $sum: "$point" },
                     completedPoints: {
-                        $sum: { $cond: [{ $eq: ["$status", "completed"] }, "$point", 0] }
+                        $sum: { $cond: [{$eq: ["$status", "completed"] }, "$point", 0] }
                     }
                 }
             },
