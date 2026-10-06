@@ -5,7 +5,7 @@ const session = require("express-session");
 
 const allowedOrigins = [
   "http://localhost:5180",
-  "http://localhost:5177",
+  "http://localhost:5178",
   "http://localhost:5173",
   "http://localhost:5174"
 ];
