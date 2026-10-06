@@ -137,8 +137,8 @@ exports.updateUser = async (req, res) => {
         const updateData = {};
         let hasAnyChange = false;
 
-        if (username !== undefined) {
-            const cleanUsername = username.trim();
+        if (username !== undefined && username !== null) {
+            const cleanUsername = username.toString().trim();
             if (cleanUsername !== currentUser.username) {
                 const existingUser = await User.findOne({ username: cleanUsername, _id: { $ne: userId } });
                 if (existingUser) {
@@ -148,28 +148,30 @@ exports.updateUser = async (req, res) => {
                 hasAnyChange = true;
             }
         }
-            if (status !== undefined) {
-                const cleanStatus = status.trim();
-                if (cleanStatus !== currentUser.status) {
-                    updateData.status = cleanStatus;
-                    hasAnyChange = true;
-                }
-            }
-            if (role !== undefined) {
-                const cleanRole = role.trim();
-                if (cleanRole !== currentUser.role) {
-                    // kiểm tra enum hợp lệ
-                    const allowedRoles = ["Member", "Admin", "Leader"];
-                    if (!allowedRoles.includes(cleanRole)) {
-                    return res.status(400).json({ message: "Invalid role" });
-                    }
-                    updateData.role = cleanRole;
-                    hasAnyChange = true;
-                }
-                }
 
-        if (email !== undefined) {
-            const cleanEmail = email.trim().toLowerCase();
+        // XỬ LÝ STATUS AN TOÀN
+        if (status !== undefined && status !== null) {
+            const cleanStatus = status.toString().trim();
+            if (cleanStatus !== currentUser.status) {
+                updateData.status = cleanStatus;
+                hasAnyChange = true;
+            }
+        }
+
+        if (role !== undefined && role !== null) {
+            const cleanRole = role.toString().trim();
+            if (cleanRole !== currentUser.role) {
+                const allowedRoles = ["Member", "Admin", "Leader"];
+                if (!allowedRoles.includes(cleanRole)) {
+                    return res.status(400).json({ message: "Invalid role" });
+                }
+                updateData.role = cleanRole;
+                hasAnyChange = true;
+            }
+        }
+
+        if (email !== undefined && email !== null) {
+            const cleanEmail = email.toString().trim().toLowerCase();
             if (cleanEmail !== currentUser.email) {
                 const existingEmail = await User.findOne({ email: cleanEmail, _id: { $ne: userId } });
                 if (existingEmail) {
@@ -199,8 +201,21 @@ exports.updateUser = async (req, res) => {
             { new: true, runValidators: true }
         ).select('-password');
 
+        // BẮN SỰ KIỆN SOCKET AN TOÀN KHI BAN USER
+        if (updatedUser.status === "Inactive") {
+            try {
+                const io = req.app.get('io');
+                if (io) {
+                    io.emit("user_banned", { userId: updatedUser._id.toString() });
+                }
+            } catch (socketErr) {
+                console.error("Lỗi khi bắn Socket ban user:", socketErr.message);
+            }
+        }
+
         res.json({ message: 'User updated successfully', user: updatedUser });
     } catch (err) {
+        console.error("Lỗi tại updateUser:", err);
         res.status(500).json({ error: err.message });
     }
 };

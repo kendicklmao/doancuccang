@@ -5,15 +5,18 @@ dns.setServers(['8.8.8.8', '8.8.4.4']);
 const http = require("http");
 const { init } = require("./socket");
 
-// SỬA TẠI ĐÂY: Import app và allowedOrigins từ ./app
+// Import app và allowedOrigins từ ./app
 const { app, allowedOrigins } = require("./app");
 const config = require("./config/env");
 const connectDB = require("./config/db");
 
 const server = http.createServer(app);
 
-// Khởi tạo Socket.IO với allowedOrigins được lấy từ app.js
-init(server, allowedOrigins);
+// Khởi tạo Socket.IO với allowedOrigins
+const io = init(server, allowedOrigins);
+
+// ✅ SỬA TẠI ĐÂY: Gán instance io vào app Express để req.app.get('io') ở controller lấy được
+app.set("io", io);
 
 const startServer = async () => {
     try {

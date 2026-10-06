@@ -3,19 +3,16 @@ const app = express();
 const cors = require("cors");
 const session = require("express-session");
 
-// Cho phép nhiều origin
 const allowedOrigins = [
   "http://localhost:5180",
   "http://localhost:5177",
-  "http://localhost:5173",//laam
-    "http://localhost:5174",//laam
-    "http://localhost:5177",
-    "http://localhost:5173"
+  "http://localhost:5173",
+  "http://localhost:5174"
 ];
 
 const path = require('path');
 app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
-  setHeaders: (res, filePath) => {
+  setHeaders: (res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
   }
 }));
@@ -54,5 +51,4 @@ app.get("/", (req, res) => {
   res.sendFile(__dirname + "/public/index.html");
 });
 
-// SỬA TẠI ĐÂY: Export cả app và allowedOrigins
 module.exports = { app, allowedOrigins };
