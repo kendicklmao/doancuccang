@@ -703,3 +703,88 @@ exports.getTaskCountByStatus = async (req, res) => {
         return res.status(500).json({ success: false, message: 'Lỗi server' });
     }
 };
+
+
+// 3. Cycle Time By Week
+exports.getCycleTimeByWeek = async (req, res) => {
+    try {
+        const { projectId } = req.params;
+        if (!mongoose.Types.ObjectId.isValid(projectId)) {
+            return res.status(400).json({ success: false, message: 'Invalid Project ID' });
+        }
+
+        const result = await Task.aggregate([
+            { $match: { projectId: new mongoose.Types.ObjectId(projectId), status: "completed" } },
+            {
+                $project: {
+                    week: 1,
+                    cycleTime: {
+                        $divide: [
+                            { $subtract: ["$updatedAt", "$createdAt"] },
+                            1000 * 60 * 60 * 24 // ngày
+                        ]
+                    }
+                }
+            },
+            {
+                $group: {
+                    _id: "$week",
+                    avgCycleTime: { $avg: "$cycleTime" },
+                    minCycleTime: { $min: "$cycleTime" },
+                    maxCycleTime: { $max: "$cycleTime" }
+                }
+            },
+            { $sort: { _id: 1 } }
+        ]);
+
+        const formattedData = result.map(item => ({
+            weekLabel: `Tuần ${item._id}`,
+            week: item._id,
+            avgCycleTime: item.avgCycleTime.toFixed(2),
+            minCycleTime: item.minCycleTime.toFixed(2),
+            maxCycleTime: item.maxCycleTime.toFixed(2)
+        }));
+
+        return res.status(200).json({ success: true, data: formattedData });
+    } catch (error) {
+        console.error("Error fetching cycle time:", error);
+        return res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+// // 4. Epic Burndown Chart
+exports.getEpicBurndown = async (req, res) => {
+    try {
+        const { projectId } = req.params;
+        if (!mongoose.Types.ObjectId.isValid(projectId)) {
+            return res.status(400).json({ success: false, message: 'Invalid Project ID' });
+        }
+
+        const result = await Task.aggregate([
+            { $match: { projectId: new mongoose.Types.ObjectId(projectId) } },
+            {
+                $group: {
+                    _id: "$week",
+                    totalPoints: { $sum: "$point" },
+                    completedPoints: {
+                        $sum: { $cond: [{ $eq: ["$status", "completed"] }, "$point", 0] }
+                    }
+                }
+            },
+            { $sort: { _id: 1 } }
+        ]);
+
+        const formattedData = result.map(item => ({
+            weekLabel: `Tuần ${item._id}`,
+            week: item._id,
+            totalPoints: item.totalPoints,
+            completedPoints: item.completedPoints,
+            remainingPoints: item.totalPoints - item.completedPoints
+        }));
+
+        return res.status(200).json({ success: true, data: formattedData });
+    } catch (error) {
+        console.error("Error fetching epic burndown:", error);
+        return res.status(500).json({ success: false, message: 'Server error' });
+    }
+};

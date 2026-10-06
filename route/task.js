@@ -49,4 +49,8 @@ taskRouter.get('/project/:projectId/tasks-by-week', verifyToken, controller.getT
 
 taskRouter.get('/project/:projectId/tasks-by-status', verifyToken, controller.getTaskCountByStatus);
 
+taskRouter.get('/project/:projectId/cycle-time', verifyToken, controller.getCycleTimeByWeek);
+taskRouter.get('/project/:projectId/epic-burndown', verifyToken, controller.getEpicBurndown);
+
+
 module.exports = taskRouter;

@@ -6,14 +6,11 @@ const session = require("express-session");
 // Cho phép nhiều origin
 const allowedOrigins = [
   "http://localhost:5180",
-<<<<<<< HEAD
-  "http://localhost:5176",
+  "http://localhost:5177",
   "http://localhost:5173",//laam
-    "http://localhost:5174"//laam
-=======
-  "http://localhost:5174",
-  "http://localhost:5173"
->>>>>>> 2c4157719ff3e0f9b7d32fdf471c0b1c046b3dc3
+    "http://localhost:5174",//laam
+    "http://localhost:5177",
+    "http://localhost:5173"
 ];
 
 const path = require('path');
