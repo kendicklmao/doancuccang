@@ -299,6 +299,13 @@ exports.moveTask = async (req, res) => {
                 await updateAssigneesPoints(assigneeIds, -taskPoints);
             }
         }
+        if (isDestDone && !isSourceDone) {
+            task.status = 'completed';
+            task.completedAt = new Date();
+        } else if (!isDestDone && isSourceDone) {
+            task.status = 'pending';
+            task.completedAt = null;
+        }
 
         if (sourceCol) {
             sourceCol.taskOrderIds = sourceCol.taskOrderIds.filter(id => id.toString() !== taskId.toString());
@@ -548,36 +555,52 @@ exports.reviewTask = async (req, res) => {
                 return title.includes('in review') || title.includes('review');
             });
 
-            if (reviewColumn) {
-                task.columnId = reviewColumn._id;
-                task.status = 'pending';
-                task.updatedAt = new Date();
-                await task.save();
-
-                if (taskPoints > 0 && assigneeIds.length > 0 && typeof updateAssigneesPoints === 'function') {
-                    await updateAssigneesPoints(assigneeIds, -taskPoints);
-                }
-
-                await logActivity(id, currentUserId, 'rejected task, deducted points and moved back to Review');
+            if (!reviewColumn) {
+                return res.status(404).json({ message: 'Review column not found' });
             }
+
+            // Chỉ trừ điểm nếu task trước đó đã được tính hoàn thành
+            const wasCompleted = task.status === 'completed';
+
+            task.columnId = reviewColumn._id;
+            task.status = 'pending';
+            task.completedAt = null;
+            task.updatedAt = new Date();
+            await task.save();
+
+            if (wasCompleted && taskPoints > 0 && assigneeIds.length > 0 && typeof updateAssigneesPoints === 'function') {
+                await updateAssigneesPoints(assigneeIds, -taskPoints);
+            }
+
+            await logActivity(id, currentUserId, 'rejected task and moved back to Review');
         } else if (action === 'accept') {
+            // Tránh cộng điểm 2 lần nếu task đã được accept
+            if (task.status === 'completed') {
+                return res.status(200).json({ message: 'Task already accepted', task });
+            }
+
             const doneColumn = columns.find(c => {
                 const title = (c.title || c.name || '').toLowerCase();
                 return title.includes('done') || title.includes('accepted');
             });
 
-            if (doneColumn) {
-                task.columnId = doneColumn._id;
-                task.status = 'completed';
-                task.updatedAt = new Date();
-                await task.save();
-
-                if (taskPoints > 0 && assigneeIds.length > 0 && typeof updateAssigneesPoints === 'function') {
-                    await updateAssigneesPoints(assigneeIds, taskPoints);
-                }
-
-                await logActivity(id, currentUserId, 'accepted task');
+            if (!doneColumn) {
+                return res.status(404).json({ message: 'Done column not found' });
             }
+
+            task.columnId = doneColumn._id;
+            task.status = 'completed';
+            task.completedAt = new Date();
+            task.updatedAt = new Date();
+            await task.save();
+
+            if (taskPoints > 0 && assigneeIds.length > 0 && typeof updateAssigneesPoints === 'function') {
+                await updateAssigneesPoints(assigneeIds, taskPoints);
+            }
+
+            await logActivity(id, currentUserId, 'accepted task');
+        } else {
+            return res.status(400).json({ message: 'Invalid action' });
         }
 
         // 🟢 SOCKET: Bắn sự kiện task_reviewed
@@ -769,81 +792,44 @@ function getCurrentWeekNumber(startDateStr) {
 exports.getEpicBurndown = async (req, res) => {
     try {
         const { projectId } = req.params;
-
         if (!mongoose.Types.ObjectId.isValid(projectId)) {
             return res.status(400).json({ success: false, message: 'Invalid Project ID' });
         }
 
-        const projectObjectId = new mongoose.Types.ObjectId(projectId);
+        const project = await Project.findById(projectId).select('startDate createdAt');
+        const tasks = await Task.find({ projectId }).select('point status completedAt updatedAt createdAt');
 
-        // 1. Lấy tổng points và ngày bắt đầu dự án
-        const projectStats = await Task.aggregate([
-            { $match: { projectId: projectObjectId } },
-            {
-                $group: {
-                    _id: null,
-                    totalPoints: { $sum: "$point" }, // Lưu ý: Schema của bạn dùng 'point' chứ không phải 'points'
-                    startDate: { $min: "$createdAt" }
-                }
-            }
-        ]);
-
-        const totalPoints = projectStats[0]?.totalPoints || 0;
-        const startDate = projectStats[0]?.startDate;
-
-        // 2. Gom nhóm số points đã hoàn thành theo tuần (dựa vào trường `week`)
-        const completedByWeek = await Task.aggregate([
-            {
-                $match: {
-                    projectId: projectObjectId,
-                    status: "completed"
-                }
-            },
-            {
-                $group: {
-                    _id: "$week",
-                    pointsDone: { $sum: "$point" }
-                }
-            },
-            { $sort: { _id: 1 } }
-        ]);
+        const totalPoints = tasks.reduce((s, t) => s + Number(t.point || 0), 0);
+        const startDate = new Date(project?.startDate || project?.createdAt || Date.now());
 
         const totalWeeks = 6;
-        const pointsPerWeek = totalPoints / totalWeeks;
-        let remainingPoints = totalPoints;
+        const DAY = 1000 * 60 * 60 * 24;
+        const weekOf = (d) => Math.floor((new Date(d) - startDate) / (DAY * 7)) + 1;
+        const currentWeek = Math.max(1, weekOf(new Date()));
 
-        const weeksData = [];
-        const currentWeek = getCurrentWeekNumber(startDate);
+        const doneByWeek = {};
+        tasks.forEach(t => {
+            if (t.status !== 'completed') return;
+            const doneAt = t.completedAt || t.updatedAt;
+            const w = Math.min(totalWeeks, Math.max(1, weekOf(doneAt)));
+            doneByWeek[w] = (doneByWeek[w] || 0) + Number(t.point || 0);
+        });
 
+        let remaining = totalPoints;
+        // Điểm xuất phát: đường kế hoạch và thực tế cùng bắt đầu từ tổng points
+        const weeks = [{ week: 'Start', planned: totalPoints, actual: totalPoints }];
         for (let w = 1; w <= totalWeeks; w++) {
-            const planned = Math.max(0, Math.round(totalPoints - pointsPerWeek * w));
-            
+            const planned = Math.max(0, Math.round(totalPoints - (totalPoints / totalWeeks) * w));
             let actual = null;
             if (w <= currentWeek) {
-                const weekStat = completedByWeek.find(item => Number(item._id) === w);
-                const doneThisWeek = weekStat ? Number(weekStat.pointsDone) : 0;
-                remainingPoints -= doneThisWeek;
-                actual = remainingPoints;
+                remaining -= doneByWeek[w] || 0;
+                actual = Math.max(0, remaining);
             }
-
-            weeksData.push({
-                week: `Week ${w}`,
-                planned,
-                actual
-            });
+            weeks.push({ week: `Week ${w}`, planned, actual });
         }
 
-        return res.json({
-            totalPoints,
-            currentWeek,
-            weeks: weeksData
-        });
-
+        res.json({ totalPoints, currentWeek: Math.min(currentWeek, totalWeeks), weeks });
     } catch (error) {
-        console.error("Lỗi tại getEpicBurndown:", error);
-        return res.status(500).json({ 
-            message: "Internal Server Error", 
-            error: error.message 
-        });
+        res.status(500).json({ message: 'Internal Server Error', error: error.message });
     }
 };
