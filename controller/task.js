@@ -804,6 +804,7 @@ const { getIO } = require('../socket'); // Import hàm lấy phiên bản socket
 
 // Import helper updating user points
 const { updateAssigneesPoints } = require('./user');
+const { buildEpicBurndown } = require('../helper/epicBurndown');
 
 // Helper function to log activity
 const logActivity = async (taskId, userId, action, details = null) => {
@@ -1593,38 +1594,16 @@ exports.getEpicBurndown = async (req, res) => {
         }
 
         const project = await Project.findById(projectId).select('startDate createdAt');
-        const tasks = await Task.find({ projectId }).select('point status completedAt updatedAt createdAt');
-
-        const totalPoints = tasks.reduce((s, t) => s + Number(t.point || 0), 0);
-        const startDate = new Date(project?.startDate || project?.createdAt || Date.now());
-
-        const totalWeeks = 6;
-        const DAY = 1000 * 60 * 60 * 24;
-        const weekOf = (d) => Math.floor((new Date(d) - startDate) / (DAY * 7)) + 1;
-        const currentWeek = Math.max(1, weekOf(new Date()));
-
-        const doneByWeek = {};
-        tasks.forEach(t => {
-            if (t.status !== 'completed') return;
-            const doneAt = t.completedAt || t.updatedAt;
-            const w = Math.min(totalWeeks, Math.max(1, weekOf(doneAt)));
-            doneByWeek[w] = (doneByWeek[w] || 0) + Number(t.point || 0);
-        });
-
-        let remaining = totalPoints;
-        // Điểm xuất phát: đường kế hoạch và thực tế cùng bắt đầu từ tổng points
-        const weeks = [{ week: 'Start', planned: totalPoints, actual: totalPoints }];
-        for (let w = 1; w <= totalWeeks; w++) {
-            const planned = Math.max(0, Math.round(totalPoints - (totalPoints / totalWeeks) * w));
-            let actual = null;
-            if (w <= currentWeek) {
-                remaining -= doneByWeek[w] || 0;
-                actual = Math.max(0, remaining);
-            }
-            weeks.push({ week: `Week ${w}`, planned, actual });
+        if (!project) {
+            return res.status(404).json({ success: false, message: 'Project not found' });
         }
 
-        res.json({ totalPoints, currentWeek: Math.min(currentWeek, totalWeeks), weeks });
+        const tasks = await Task.find({ projectId }).select('point status completedAt updatedAt createdAt');
+
+        const now = new Date();
+        const startDate = project.startDate || project.createdAt || now;
+
+        res.json(buildEpicBurndown(tasks, startDate, now));
     } catch (error) {
         res.status(500).json({ message: 'Internal Server Error', error: error.message });
     }
