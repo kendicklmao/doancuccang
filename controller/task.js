@@ -757,38 +757,93 @@ exports.getCycleTimeByWeek = async (req, res) => {
 };
 
 // 4. Epic Burndown Chart
+function getCurrentWeekNumber(startDateStr) {
+    if (!startDateStr) return 1;
+    const startDate = new Date(startDateStr);
+    const now = new Date();
+    const diffInDays = Math.floor((now - startDate) / (1000 * 60 * 60 * 24));
+    const currentWeek = Math.floor(diffInDays / 7) + 1;
+    return Math.max(1, currentWeek);
+}
+
 exports.getEpicBurndown = async (req, res) => {
     try {
         const { projectId } = req.params;
+
         if (!mongoose.Types.ObjectId.isValid(projectId)) {
             return res.status(400).json({ success: false, message: 'Invalid Project ID' });
         }
 
-        const result = await Task.aggregate([
-            { $match: { projectId: new mongoose.Types.ObjectId(projectId) } },
+        const projectObjectId = new mongoose.Types.ObjectId(projectId);
+
+        // 1. Lấy tổng points và ngày bắt đầu dự án
+        const projectStats = await Task.aggregate([
+            { $match: { projectId: projectObjectId } },
+            {
+                $group: {
+                    _id: null,
+                    totalPoints: { $sum: "$point" }, // Lưu ý: Schema của bạn dùng 'point' chứ không phải 'points'
+                    startDate: { $min: "$createdAt" }
+                }
+            }
+        ]);
+
+        const totalPoints = projectStats[0]?.totalPoints || 0;
+        const startDate = projectStats[0]?.startDate;
+
+        // 2. Gom nhóm số points đã hoàn thành theo tuần (dựa vào trường `week`)
+        const completedByWeek = await Task.aggregate([
+            {
+                $match: {
+                    projectId: projectObjectId,
+                    status: "completed"
+                }
+            },
             {
                 $group: {
                     _id: "$week",
-                    totalPoints: { $sum: "$point" },
-                    completedPoints: {
-                        $sum: { $cond: [{$eq: ["$status", "completed"] }, "$point", 0] }
-                    }
+                    pointsDone: { $sum: "$point" }
                 }
             },
             { $sort: { _id: 1 } }
         ]);
 
-        const formattedData = result.map(item => ({
-            weekLabel: `Tuần ${item._id}`,
-            week: item._id,
-            totalPoints: item.totalPoints,
-            completedPoints: item.completedPoints,
-            remainingPoints: item.totalPoints - item.completedPoints
-        }));
+        const totalWeeks = 6;
+        const pointsPerWeek = totalPoints / totalWeeks;
+        let remainingPoints = totalPoints;
 
-        return res.status(200).json({ success: true, data: formattedData });
+        const weeksData = [];
+        const currentWeek = getCurrentWeekNumber(startDate);
+
+        for (let w = 1; w <= totalWeeks; w++) {
+            const planned = Math.max(0, Math.round(totalPoints - pointsPerWeek * w));
+            
+            let actual = null;
+            if (w <= currentWeek) {
+                const weekStat = completedByWeek.find(item => Number(item._id) === w);
+                const doneThisWeek = weekStat ? Number(weekStat.pointsDone) : 0;
+                remainingPoints -= doneThisWeek;
+                actual = remainingPoints;
+            }
+
+            weeksData.push({
+                week: `Week ${w}`,
+                planned,
+                actual
+            });
+        }
+
+        return res.json({
+            totalPoints,
+            currentWeek,
+            weeks: weeksData
+        });
+
     } catch (error) {
-        console.error("Error fetching epic burndown:", error);
-        return res.status(500).json({ success: false, message: 'Server error' });
+        console.error("Lỗi tại getEpicBurndown:", error);
+        return res.status(500).json({ 
+            message: "Internal Server Error", 
+            error: error.message 
+        });
     }
 };
