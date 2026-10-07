@@ -34,13 +34,6 @@ const taskSchema = new mongoose.Schema({
         type: Number,
         default: 0
     },
-    // startDate: {
-    //     type: Date,
-    //     default: Date.now
-    // },
-    // dueDate: {
-    //     type: Date
-    // },
 
     week: {
         type: Number,
@@ -49,6 +42,10 @@ const taskSchema = new mongoose.Schema({
     status: {
         type: String,
         default: "pending"
+    },
+    completedDate: {
+        type: Date,
+        default: null
     }
 },
     { timestamps: true });

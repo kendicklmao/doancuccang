@@ -170,19 +170,47 @@ exports.updateTask = async (req, res) => {
             return res.status(404).json({ message: 'Task not found' });
         }
 
+        const updateFields = { ...req.body };
+
         if (req.body.point !== undefined) {
-            req.body.point = Number(req.body.point || 0);
+            updateFields.point = Number(req.body.point || 0);
         }
         if (req.body.week !== undefined) {
-            req.body.week = Number(req.body.week || 1);
+            updateFields.week = Number(req.body.week || 1);
         }
 
+        // 🟢 KIỂM TRA TRỰC TIẾP QUA TITLE / NAME CỦA CỘT
+        if (req.body.columnId && String(req.body.columnId) !== String(task.columnId)) {
+            const targetCol = await Column.findById(req.body.columnId);
+
+            if (targetCol) {
+                // Lấy giá trị tiêu đề cột (chấp nhận cả title lẫn name)
+                const colTitle = String(targetCol.title || targetCol.name || "").trim().toLowerCase();
+
+                // Kiểm tra xem tiêu đề cột có chứa 'done' hoặc 'hoàn thành' không
+                const isDoneColumn = colTitle.includes("done") || colTitle.includes("hoàn thành");
+
+                if (isDoneColumn) {
+                    const currentDate = new Date();
+                    // Lưu ngày hiện tại nếu chưa có
+                    updateFields.completedAt = task.completedAt || currentDate;
+                    updateFields.completedDate = task.completedDate || currentDate;
+                } else {
+                    // Nếu kéo sang cột khác Done -> Reset về null
+                    updateFields.completedAt = null;
+                    updateFields.completedDate = null;
+                }
+            }
+        }
+
+        // Cập nhật vào DB
         const updatedTask = await Task.findByIdAndUpdate(
             taskId,
-            req.body,
+            { $set: updateFields },
             { new: true, runValidators: true }
         ).populate('assignees', 'username name email');
 
+        // Ghi Log Activity
         if (req.body.assignees) {
             await logActivity(taskId, currentUserId, 'updated assignees list');
         } else if (req.body.title && req.body.title !== task.title) {
@@ -208,10 +236,10 @@ exports.updateTask = async (req, res) => {
             console.error("Socket emit error (updateTask):", socketErr.message);
         }
 
-        res.json(updatedTask);
+        return res.json(updatedTask);
     } catch (err) {
         console.error("Error updating task:", err);
-        res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: err.message });
     }
 };
 
@@ -257,6 +285,7 @@ exports.deleteTask = async (req, res) => {
 };
 
 // Move task between columns & adjust user points
+// Move task between columns & adjust user points
 exports.moveTask = async (req, res) => {
     try {
         const taskId = req.params.id;
@@ -278,11 +307,12 @@ exports.moveTask = async (req, res) => {
 
         const sourceCol = sourceColumnId ? await Column.findById(sourceColumnId) : null;
 
-        const destTitle = (destCol.title || destCol.name || '').toLowerCase();
-        const sourceTitle = sourceCol ? (sourceCol.title || sourceCol.name || '').toLowerCase() : '';
+        const destTitle = String(destCol.title || destCol.name || '').trim().toLowerCase();
+        const sourceTitle = sourceCol ? String(sourceCol.title || sourceCol.name || '').trim().toLowerCase() : '';
 
-        const isDestDone = destTitle.includes('done') || destTitle.includes('accepted') || destTitle.includes('finish');
-        const isSourceDone = sourceTitle.includes('done') || sourceTitle.includes('accepted') || sourceTitle.includes('finish');
+        // Kiểm tra cột có phải Done/Hoàn thành không (không phụ thuộc position)
+        const isDestDone = destTitle.includes('done') || destTitle.includes('accepted') || destTitle.includes('finish') || destTitle.includes('hoàn thành');
+        const isSourceDone = sourceTitle.includes('done') || sourceTitle.includes('accepted') || sourceTitle.includes('finish') || sourceTitle.includes('hoàn thành');
 
         const taskPoints = Number(task.point || 0);
         const assigneeIds = extractAssigneeIds(task.assignees);
@@ -310,9 +340,20 @@ exports.moveTask = async (req, res) => {
         destOrder.splice(validIndex, 0, taskId);
         destCol.taskOrderIds = destOrder;
 
-        // Cập nhật columnId và reset mốc updatedAt về thời điểm chuyển cột mới
+        // Cập nhật columnId và reset mốc updatedAt
         task.columnId = destColumnId;
         task.updatedAt = new Date();
+
+        // 🟢 CẬP NHẬT COMPLETEDAT & COMPLETEDDATE KHI DI CHUYỂN
+        if (isDestDone) {
+            const currentDate = new Date();
+            task.completedAt = task.completedAt || currentDate;
+            task.completedDate = task.completedDate || currentDate;
+        } else {
+            // Khi di chuyển ra khỏi cột Done -> Đưa về null
+            task.completedAt = null;
+            task.completedDate = null;
+        }
 
         await Promise.all([destCol.save(), task.save()]);
 
@@ -326,15 +367,95 @@ exports.moveTask = async (req, res) => {
                 taskId,
                 sourceColumnId,
                 destColumnId,
-                destinationIndex
+                destinationIndex,
+                task // Trả kèm task object đã cập nhật completedAt/completedDate
             });
         } catch (socketErr) {
             console.error("Socket emit error (moveTask):", socketErr.message);
         }
 
-        return res.status(200).json({ message: 'Task position updated successfully', taskId });
+        return res.status(200).json({ message: 'Task position updated successfully', taskId, task });
     } catch (err) {
         console.error('Error moving task:', err);
+        return res.status(500).json({ error: err.message });
+    }
+};
+
+// Update task
+exports.updateTask = async (req, res) => {
+    try {
+        const taskId = req.params.id;
+        const currentUserId = req.user?.id || req.user?._id;
+
+        const task = await Task.findById(taskId);
+        if (!task) {
+            return res.status(404).json({ message: 'Task not found' });
+        }
+
+        const updateFields = { ...req.body };
+
+        if (req.body.point !== undefined) {
+            updateFields.point = Number(req.body.point || 0);
+        }
+        if (req.body.week !== undefined) {
+            updateFields.week = Number(req.body.week || 1);
+        }
+
+        // 🟢 KIỂM TRA TRỰC TIẾP QUA TITLE / NAME CỦA CỘT KHI DÙNG UPDATETASK
+        if (req.body.columnId && String(req.body.columnId) !== String(task.columnId)) {
+            const targetCol = await Column.findById(req.body.columnId);
+
+            if (targetCol) {
+                const colTitle = String(targetCol.title || targetCol.name || "").trim().toLowerCase();
+                const isDoneColumn = colTitle.includes("done") || colTitle.includes("accepted") || colTitle.includes("finish") || colTitle.includes("hoàn thành");
+
+                if (isDoneColumn) {
+                    const currentDate = new Date();
+                    updateFields.completedAt = task.completedAt || currentDate;
+                    updateFields.completedDate = task.completedDate || currentDate;
+                } else {
+                    updateFields.completedAt = null;
+                    updateFields.completedDate = null;
+                }
+            }
+        }
+
+        // Cập nhật vào DB
+        const updatedTask = await Task.findByIdAndUpdate(
+            taskId,
+            { $set: updateFields },
+            { new: true, runValidators: true }
+        ).populate('assignees', 'username name email');
+
+        // Ghi Log Activity
+        if (req.body.assignees) {
+            await logActivity(taskId, currentUserId, 'updated assignees list');
+        } else if (req.body.title && req.body.title !== task.title) {
+            await logActivity(taskId, currentUserId, `changed title to "${req.body.title}"`);
+        } else if (req.body.columnId && String(req.body.columnId) !== String(task.columnId)) {
+            const targetCol = await Column.findById(req.body.columnId);
+            const colName = targetCol ? (targetCol.title || targetCol.name) : 'new column';
+            await logActivity(taskId, currentUserId, `moved task to column "${colName}"`);
+        } else if (req.body.priority && req.body.priority !== task.priority) {
+            await logActivity(taskId, currentUserId, `changed priority to ${req.body.priority}`);
+        } else if (req.body.status && req.body.status !== task.status) {
+            await logActivity(taskId, currentUserId, `changed status to ${req.body.status}`);
+        } else if (req.body.description !== undefined && req.body.description !== task.description) {
+            await logActivity(taskId, currentUserId, 'updated task description');
+        } else {
+            await logActivity(taskId, currentUserId, 'updated task details');
+        }
+
+        // 🟢 SOCKET: Bắn sự kiện task_updated cho cả project
+        try {
+            getIO().to(`project_${task.projectId}`).emit("task_updated", updatedTask);
+        } catch (socketErr) {
+            console.error("Socket emit error (updateTask):", socketErr.message);
+        }
+
+        return res.json(updatedTask);
+    } catch (err) {
+        console.error("Error updating task:", err);
         return res.status(500).json({ error: err.message });
     }
 };
@@ -844,6 +965,134 @@ exports.getEpicBurndown = async (req, res) => {
         return res.status(500).json({ 
             message: "Internal Server Error", 
             error: error.message 
+        });
+    }
+};
+
+// Controller lấy điểm Expectancy theo tuần của dự án
+// Controller lấy điểm Expectancy & Real Progress tính theo ngày completedDate thực tế
+// Controller lấy điểm Expectancy & Real Progress theo tuần thời gian thực
+// Controller lấy điểm Expectancy & Real Progress theo yêu cầu
+// Controller lấy điểm Expectancy & Real Progress đúng số tuần của Project
+exports.getWeeklyExpectancy = async (req, res) => {
+    try {
+        const { projectId } = req.params;
+
+        if (!mongoose.Types.ObjectId.isValid(projectId)) {
+            return res.status(400).json({ success: false, message: 'Invalid Project ID' });
+        }
+
+        const projectObjectId = new mongoose.Types.ObjectId(projectId);
+
+        // 1. Tìm cột đại diện cho trạng thái Done
+        const doneColumn = await Column.findOne({
+            projectId: projectObjectId,
+            $or: [
+                { position: 3 },
+                { title: { $regex: /done|accepted|finish|hoàn thành/i } },
+                { name: { $regex: /done|accepted|finish|hoàn thành/i } }
+            ]
+        });
+
+        const doneColumnId = doneColumn ? String(doneColumn._id) : null;
+
+        // 2. Lấy toàn bộ task của Project
+        const tasks = await Task.find({ projectId: projectObjectId });
+
+        if (tasks.length === 0) {
+            return res.status(200).json({ success: true, weeks: [] });
+        }
+
+        // 3. Tìm ngày bắt đầu dự án & xác định WEEK LỚN NHẤT CÓ TRONG TASK
+        let minStartDate = null;
+        let maxProjectWeek = 1; // Tuần tối đa thực tế của Project này
+
+        tasks.forEach(t => {
+            if (t.createdAt) {
+                const cTime = new Date(t.createdAt).getTime();
+                if (!minStartDate || cTime < minStartDate) {
+                    minStartDate = cTime;
+                }
+            }
+
+            // Lấy week lớn nhất được gán cho task trong project này
+            const taskWeekNum = Number(t.week || 1);
+            if (taskWeekNum > maxProjectWeek) {
+                maxProjectWeek = taskWeekNum;
+            }
+        });
+
+        const projectStartDate = minStartDate ? new Date(minStartDate) : new Date();
+
+        // 4. Tính Tuần thời gian thực hiện tại của dự án
+        const now = new Date();
+        const diffInMs = now.getTime() - projectStartDate.getTime();
+        const diffInDays = Math.max(0, Math.floor(diffInMs / (1000 * 60 * 60 * 24)));
+        const currentProjectWeek = Math.floor(diffInDays / 7) + 1;
+
+        // Helper tính week hoàn thành thực tế từ completedDate
+        const getCompletedWeekNumber = (completedDate) => {
+            if (!completedDate) return null;
+            const compTime = new Date(completedDate).getTime();
+            const elapsedMs = compTime - projectStartDate.getTime();
+            if (elapsedMs < 0) return 1;
+            const days = Math.floor(elapsedMs / (1000 * 60 * 60 * 24));
+            return Math.floor(days / 7) + 1;
+        };
+
+        // 🟢 5. Khởi tạo map ĐÚNG SỐ TUẦN CỦA PROJECT (Tối đa = maxProjectWeek)
+        const weeklyMap = {};
+        for (let w = 1; w <= maxProjectWeek; w++) {
+            weeklyMap[w] = { expectancy: 0, realProgress: 0 };
+        }
+
+        // 6. Gom điểm
+        tasks.forEach(task => {
+            const taskPoint = Number(task.point || 0);
+
+            // A. PLAN PROGRESS
+            const planWeek = Number(task.week || 1);
+            if (weeklyMap[planWeek]) {
+                weeklyMap[planWeek].expectancy += taskPoint;
+            }
+
+            // B. REAL PROGRESS (Chỉ tính cho task Done có completedDate)
+            const isDone = doneColumnId && String(task.columnId) === doneColumnId;
+            const actualCompletedDate = task.completedDate || task.completedAt;
+
+            if (isDone && actualCompletedDate) {
+                const actualWeek = getCompletedWeekNumber(actualCompletedDate);
+                // Chỉ cộng nếu tuần đó nằm trong khoảng số tuần của Project
+                if (actualWeek && weeklyMap[actualWeek]) {
+                    weeklyMap[actualWeek].realProgress += taskPoint;
+                }
+            }
+        });
+
+        // 🟢 7. XUẤT DỮ LIỆU: Chỉ xuất từ Week 1 -> maxProjectWeek
+        const weeksData = [];
+        for (let w = 1; w <= maxProjectWeek; w++) {
+            weeksData.push({
+                week: `Week ${w}`,
+                weekNumber: w,
+                expectancy: weeklyMap[w].expectancy,
+                // Nếu w > currentProjectWeek (chưa tới tuần đó) -> gán null để ngắt đường Real Progress
+                realProgress: w <= currentProjectWeek ? weeklyMap[w].realProgress : null
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            currentProjectWeek,
+            maxProjectWeek,
+            weeks: weeksData
+        });
+    } catch (error) {
+        console.error("Lỗi getWeeklyExpectancy:", error);
+        return res.status(500).json({
+            success: false,
+            message: 'Server error',
+            error: error.message
         });
     }
 };
