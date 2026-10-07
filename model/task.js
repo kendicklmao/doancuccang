@@ -34,6 +34,13 @@ const taskSchema = new mongoose.Schema({
         type: Number,
         default: 0
     },
+    // startDate: {
+    //     type: Date,
+    //     default: Date.now
+    // },
+    // dueDate: {
+    //     type: Date
+    // },
 
     week: {
         type: Number,
