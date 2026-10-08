@@ -1453,6 +1453,104 @@ exports.getTaskActivities = async (req, res) => {
     }
 };
 
+exports.Portfolio = async (req, res) => {
+    try {
+        const projects = await Project.find();
+
+        let totalCompletedWeeks = 0; // Tổng số tuần đã diễn ra của tất cả project
+        let totalOnTimeWeeks = 0;     // Tổng số tuần đạt hoặc vượt Plan Progress
+
+        for (const project of projects) {
+            const projectId = project._id;
+
+            // 1. Tìm cột Done của dự án
+            const doneColumn = await Column.findOne({
+                projectId,
+                $or: [
+                    { position: 3 },
+                    { title: { $regex: /done|accepted|finish|hoàn thành/i } },
+                    { name: { $regex: /done|accepted|finish|hoàn thành/i } }
+                ]
+            });
+            const doneColumnId = doneColumn ? String(doneColumn._id) : null;
+
+            // 2. Lấy tất cả task của project
+            const tasks = await Task.find({ projectId });
+            if (tasks.length === 0) continue;
+
+            // 3. Xác định ngày bắt đầu & tuần hiện tại
+            let minStartDate = null;
+            let maxProjectWeek = 1;
+
+            tasks.forEach(t => {
+                if (t.createdAt) {
+                    const cTime = new Date(t.createdAt).getTime();
+                    if (!minStartDate || cTime < minStartDate) minStartDate = cTime;
+                }
+                const taskWeekNum = Number(t.week || 1);
+                if (taskWeekNum > maxProjectWeek) maxProjectWeek = taskWeekNum;
+            });
+
+            const projectStartDate = minStartDate ? new Date(minStartDate) : new Date(project.startDate || Date.now());
+            const now = new Date();
+            const diffInDays = Math.max(0, Math.floor((now.getTime() - projectStartDate.getTime()) / (1000 * 60 * 60 * 24)));
+            const currentProjectWeek = Math.floor(diffInDays / 7) + 1;
+
+            // Helper lấy mốc hết tuần
+            const getWeekEndTimestamp = (w) => {
+                const endDate = new Date(projectStartDate.getTime());
+                endDate.setDate(endDate.getDate() + (w * 7));
+                return endDate.getTime();
+            };
+
+            // 4. Duyệt các tuần ĐÃ DIỄN RA (từ tuần 1 đến currentProjectWeek)
+            const weeksToEvaluate = Math.min(currentProjectWeek, maxProjectWeek);
+
+            for (let w = 1; w <= weeksToEvaluate; w++) {
+                const weekEndMs = getWeekEndTimestamp(w);
+
+                // Điểm Plan dồn tích lũy đến tuần w
+                const planPoints = tasks
+                    .filter(t => Number(t.week || 1) <= w)
+                    .reduce((sum, t) => sum + Number(t.point || 0), 0);
+
+                // Điểm Real Progress dồn tích lũy đến tuần w
+                const realPoints = tasks
+                    .filter(t => {
+                        const isDone = doneColumnId && String(t.columnId) === doneColumnId;
+                        const actualCompletedDate = t.completedDate || t.completedAt;
+                        if (!isDone || !actualCompletedDate) return false;
+                        return new Date(actualCompletedDate).getTime() <= weekEndMs;
+                    })
+                    .reduce((sum, t) => sum + Number(t.point || 0), 0);
+
+                totalCompletedWeeks += 1;
+
+                // Điều kiện On-time: Real Progress >= Plan Progress
+                if (realPoints >= planPoints) {
+                    totalOnTimeWeeks += 1;
+                }
+            }
+        }
+
+        // 5. Tính % On-time Rate của toàn bộ Project
+        const onTimeRate = totalCompletedWeeks > 0
+            ? Math.round((totalOnTimeWeeks / totalCompletedWeeks) * 100)
+            : 100;
+
+        return res.status(200).json({
+            totalProjects: projects.length,
+            totalCompletedWeeks,
+            totalOnTimeWeeks,
+            onTimeRate: parseFloat(onTimeRate)
+        });
+
+    } catch (error) {
+        console.error("Lỗi tính On-Time Rate:", error);
+        return res.status(500).json({ message: "Lỗi hệ thống tính toán Portfolio", error: error.message });
+    }
+};
+
 // Review task action (Accept / Not Accept)
 exports.reviewTask = async (req, res) => {
     try {

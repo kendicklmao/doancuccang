@@ -54,5 +54,7 @@ taskRouter.get('/project/:projectId/epic-burndown', verifyToken, controller.getE
 
 taskRouter.get('/project/:projectId/weekly-expectancy', verifyToken, controller.getWeeklyExpectancy);
 
+taskRouter.get("/project/portfolio", verifyToken, controller.Portfolio);
+
 
 module.exports = taskRouter;
