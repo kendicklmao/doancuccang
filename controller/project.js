@@ -142,9 +142,8 @@ exports.deleteProject = async (req, res) => {
 
 // HÀM UPDATE PROJECT ĐÃ ĐƯỢC SỬA ĐỔI
 exports.updateProject = async (req, res) => {
-    
     try {
-const { name, description, color, startDate, date, dueDate, assignees, budget ,costPerPoint  } = req.body;
+        const { name, description, color, startDate, date, dueDate, assignees, budget, costPerPoint } = req.body;
         const projectId = req.params.id;
 
         // 1. Kiểm tra project có tồn tại không
@@ -164,27 +163,27 @@ const { name, description, color, startDate, date, dueDate, assignees, budget ,c
                 hasAnyChange = true;
             }
         }
-            // Cập nhật Budget
-            if (budget !== undefined && budget !== null && budget !== '') {
-                const newBudget = Number(budget);
-                if (isNaN(newBudget) || newBudget < 0) {
-                    return res.status(400).json({ message: 'Budget must be a number >= 0' });
-                }
-                if (newBudget !== (currentProject.budget || 0)) {
-                    updateData.budget = newBudget;
-                    hasAnyChange = true;
-                }
+        // Cập nhật Budget
+        if (budget !== undefined && budget !== null && budget !== '') {
+            const newBudget = Number(budget);
+            if (isNaN(newBudget) || newBudget < 0) {
+                return res.status(400).json({ message: 'Budget must be a number >= 0' });
             }
-            if (costPerPoint !== undefined && costPerPoint !== null && costPerPoint !== '') {
-                const newRate = Number(costPerPoint);
-                if (isNaN(newRate) || newRate < 0) {
-                    return res.status(400).json({ message: 'Cost per point must be a number >= 0' });
-                }
-                if (newRate !== (currentProject.costPerPoint || 0)) {
-                    updateData.costPerPoint = newRate;
-                    hasAnyChange = true;
-                }
+            if (newBudget !== (currentProject.budget || 0)) {
+                updateData.budget = newBudget;
+                hasAnyChange = true;
             }
+        }
+        if (costPerPoint !== undefined && costPerPoint !== null && costPerPoint !== '') {
+            const newRate = Number(costPerPoint);
+            if (isNaN(newRate) || newRate < 0) {
+                return res.status(400).json({ message: 'Cost per point must be a number >= 0' });
+            }
+            if (newRate !== (currentProject.costPerPoint || 0)) {
+                updateData.costPerPoint = newRate;
+                hasAnyChange = true;
+            }
+        }
         // Cập nhật Description
         if (description !== undefined && description !== currentProject.description) {
             updateData.description = description;
@@ -197,7 +196,7 @@ const { name, description, color, startDate, date, dueDate, assignees, budget ,c
             hasAnyChange = true;
         }
 
-        // Cập nhật startDate
+        // Cập nhật startDate (Chấp nhận mọi ngày, kể cả quá khứ)
         if (startDate !== undefined && startDate !== null) {
             const newStartDate = new Date(startDate).getTime();
             const currentStartDate = currentProject.startDate ? new Date(currentProject.startDate).getTime() : 0;
