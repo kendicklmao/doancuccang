@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "kill-port 3000 && nodemon index.js",
     "start": "node --watch index.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --test \"test/**/*.test.js\"",
     "build": ""
   },
   "repository": {
