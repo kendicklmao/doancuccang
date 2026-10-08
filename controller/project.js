@@ -27,26 +27,36 @@ exports.getProject = async (req, res) => {
 
 exports.createProject = async (req, res) => {
     try {
-        const { name, description, color, startDate, date, assignees } = req.body;
+       const { name, description, color, startDate, date, assignees, budget,costPerPoint } = req.body;
         const userId = req.user.id;
 
         if (!name || !name.trim()) {
             return res.status(400).json({ message: 'Project name is required' });
         }
+        const safeBudget = Number(budget) || 0;
+        if (safeBudget < 0) {
+            return res.status(400).json({ message: 'Budget must be >= 0' });
+        }
+        const safeCostPerPoint = Number(costPerPoint) || 0;
+if (safeCostPerPoint < 0) {
+    return res.status(400).json({ message: 'Cost per point must be >= 0' });
+}
 
         // Lọc an toàn cho assignees ở phía Server
         const safeAssignees = Array.isArray(assignees)
             ? assignees.filter(id => id && typeof id === 'string' && id.trim() !== '')
             : [];
 
-        const newProject = new Project({
+       const newProject = new Project({
             name: name.trim(),
             description,
             color,
             startDate: startDate || new Date(),
             date,
             userId,
-            assignees: safeAssignees
+            assignees: safeAssignees,
+            budget: safeBudget,
+            costPerPoint: safeCostPerPoint
         });
         await newProject.save();
 
@@ -132,8 +142,9 @@ exports.deleteProject = async (req, res) => {
 
 // HÀM UPDATE PROJECT ĐÃ ĐƯỢC SỬA ĐỔI
 exports.updateProject = async (req, res) => {
+    
     try {
-        const { name, description, color, startDate, date, dueDate, assignees } = req.body;
+const { name, description, color, startDate, date, dueDate, assignees, budget ,costPerPoint  } = req.body;
         const projectId = req.params.id;
 
         // 1. Kiểm tra project có tồn tại không
@@ -153,7 +164,27 @@ exports.updateProject = async (req, res) => {
                 hasAnyChange = true;
             }
         }
-
+            // Cập nhật Budget
+            if (budget !== undefined && budget !== null && budget !== '') {
+                const newBudget = Number(budget);
+                if (isNaN(newBudget) || newBudget < 0) {
+                    return res.status(400).json({ message: 'Budget must be a number >= 0' });
+                }
+                if (newBudget !== (currentProject.budget || 0)) {
+                    updateData.budget = newBudget;
+                    hasAnyChange = true;
+                }
+            }
+            if (costPerPoint !== undefined && costPerPoint !== null && costPerPoint !== '') {
+                const newRate = Number(costPerPoint);
+                if (isNaN(newRate) || newRate < 0) {
+                    return res.status(400).json({ message: 'Cost per point must be a number >= 0' });
+                }
+                if (newRate !== (currentProject.costPerPoint || 0)) {
+                    updateData.costPerPoint = newRate;
+                    hasAnyChange = true;
+                }
+            }
         // Cập nhật Description
         if (description !== undefined && description !== currentProject.description) {
             updateData.description = description;

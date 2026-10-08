@@ -37,7 +37,8 @@ const projectSchema = new mongoose.Schema({
         type: String,
         default: ''
     },
-    budget: { type: Number, default: 0 }, 
+    costPerPoint: { type: Number, default: 0, min: 0 },
+   budget: { type: Number, default: 0, min: 0 },
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
 }, { timestamps: true });
 
