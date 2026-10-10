@@ -5,7 +5,7 @@ const controller = require("./../controller/column");
 const { verifyToken, checkRole } = require('../middleware/auth');
 
 // 1. Tạo cột mới: Chỉ dành cho Manager
-columnRouter.post("/", verifyToken, controller.createColumn);
+columnRouter.post("/", verifyToken, checkRole([]),controller.createColumn);
 
 // 2. Lấy danh sách cột: Cần verifyToken (Member, Leader, Manager đều xem được)
 columnRouter.get("/", verifyToken, controller.getColumn);

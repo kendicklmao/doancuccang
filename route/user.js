@@ -12,14 +12,14 @@ userRouter.post('/login', controller.login);
 userRouter.get('/currentUser', verifyToken, controller.GetCurrentUser);
 
 // 3. Quản lý danh sách người dùng: Chỉ dành cho Manager
-userRouter.get('/', controller.getUsers);
+userRouter.get('/', verifyToken, controller.getUsers);
 
 // 4. Xóa người dùng: Chỉ dành cho Manager
-userRouter.delete('/:id', verifyToken, controller.deleteUser);
+userRouter.delete('/:id', verifyToken,checkRole([]),controller.deleteUser);
 
 // 5. Lấy thông tin chi tiết 1 người dùng theo ID
 userRouter.get('/:id', verifyToken, controller.getUserById);
-userRouter.post('/check-email',controller.CheckEmail);
+userRouter.post('/check-email',verifyToken,controller.CheckEmail);
 userRouter.post('/reset-password',controller.resetPassword);
 userRouter.put('/:id',controller.updateUser);
 module.exports = userRouter;

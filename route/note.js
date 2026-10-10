@@ -7,9 +7,9 @@ const { verifyToken, checkRole } = require('../middleware/auth');
 noteRouter.get('/project/:projectId', verifyToken, noteController.getNotesByProjectId);
 
 // Tạo note mới
-noteRouter.post('/', verifyToken, noteController.createNote);
+noteRouter.post('/', verifyToken, checkRole(["Manager", "Leader"]),noteController.createNote);
 
 // Xóa note
-noteRouter.delete('/:id', verifyToken, noteController.deleteNote);
+noteRouter.delete('/:id', verifyToken, checkRole(["Manager", "Leader"]),noteController.deleteNote);
 
 module.exports = noteRouter;
