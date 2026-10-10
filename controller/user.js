@@ -6,6 +6,8 @@ const Project = require('./../model/project');
 const Column = require('./../model/column');
 const Task = require('./../model/task');
 const mongoose = require('mongoose');
+const mailer = require('./../helper/mailer');
+const passwordReset = require('./../helper/passwordReset');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'secretkey_kanban_123';
 
@@ -277,39 +279,51 @@ exports.CheckEmail =async (req,res) =>{
         return res.status(500).json({ error: err.message });
     }
 }
-exports.resetPassword = async (req, res) => {
+// The former POST /user/reset-password changed ANY account's password from just an email (no proof of ownership).
+// It is retired in favour of the OTP flow below.
+exports.resetPassword = (req, res) =>
+    res.status(410).json({ message: 'This endpoint was removed. Use POST /api/user/forgot-password/request and /verify.' });
+
+const passwordDeps = () => ({
+    User,
+    PasswordReset: require('./../model/passwordReset'),
+    sendMail: mailer.sendMail,
+    isMailConfigured: mailer.isMailConfigured,
+    secret: process.env.OTP_SECRET || JWT_SECRET,
+});
+
+// POST /api/user/forgot-password/request { email } (public)
+exports.requestPasswordOtp = async (req, res) => {
     try {
-        const { email, newPassword } = req.body;
-
-        if (!email || !newPassword) {
-            return res.status(400).json({ message: 'Email and new password are required' });
-        }
-
-        if (newPassword.length < 6) {
-            return res.status(400).json({ message: 'Password must be at least 6 characters long' });
-        }
-
-        // 1. Tìm user dựa trên email gửi lên
-        const user = await User.findOne({ email: email });
-        if (!user) {
-            return res.status(404).json({ message: 'User not found' });
-        }
-
-        // 2. Tiến hành băm mật khẩu mới bằng bcrypt đúng chuẩn
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(newPassword, salt);
-
-        // 3. FIX CHÍNH TẠI ĐÂY: Cập nhật trực tiếp vào DB, bỏ qua hook save() ngầm
-        await User.findByIdAndUpdate(
-            user._id, 
-            { password: hashedPassword },
-            { runValidators: true }
-        );
-
-        return res.status(200).json({ message: 'Password reset successfully' });
-
+        const result = await passwordReset.requestOtp(req.body || {}, passwordDeps());
+        return res.status(result.status).json(result.body);
     } catch (err) {
-        console.error("Lỗi tại resetPassword:", err);
-        return res.status(500).json({ error: err.message });
+        console.error('requestPasswordOtp failed:', err.message); // never log the code or the email body
+        return res.status(502).json({ message: 'The verification email could not be sent. Please try again later.' });
+    }
+};
+
+// POST /api/user/forgot-password/verify { email, otp, newPassword } (public)
+exports.verifyPasswordOtp = async (req, res) => {
+    try {
+        const result = await passwordReset.verifyOtpAndReset(req.body || {}, passwordDeps());
+        return res.status(result.status).json(result.body);
+    } catch (err) {
+        console.error('verifyPasswordOtp failed:', err.message);
+        return res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// POST /api/user/change-password { currentPassword, newPassword } [JWT]
+exports.changePassword = async (req, res) => {
+    try {
+        const result = await passwordReset.changePassword(
+            { userId: req.user?.id || req.user?._id, currentPassword: req.body?.currentPassword, newPassword: req.body?.newPassword },
+            { User }
+        );
+        return res.status(result.status).json(result.body);
+    } catch (err) {
+        console.error('changePassword failed:', err.message);
+        return res.status(500).json({ message: 'Server error' });
     }
 };

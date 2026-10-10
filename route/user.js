@@ -7,6 +7,10 @@ const { verifyToken, checkRole } = require('../middleware/auth');
 // 1. Auth public (Không cần đăng nhập)
 userRouter.post('/register', controller.register);
 userRouter.post('/login', controller.login);
+// Forgot password by email OTP (public) and change password (logged in). Declared before the /:id routes.
+userRouter.post('/forgot-password/request', controller.requestPasswordOtp);
+userRouter.post('/forgot-password/verify', controller.verifyPasswordOtp);
+userRouter.post('/change-password', verifyToken, controller.changePassword);
 
 // 2. Lấy thông tin user hiện tại đang đăng nhập
 userRouter.get('/currentUser', verifyToken, controller.GetCurrentUser);

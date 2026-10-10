@@ -805,6 +805,7 @@ const { getIO } = require('../socket'); // Import hàm lấy phiên bản socket
 // Import helper updating user points
 const { updateAssigneesPoints } = require('./user');
 const { buildEpicBurndown } = require('../helper/epicBurndown');
+const { isTodoColumnTitle } = require('../helper/taskRules');
 
 // Helper function to log activity
 const logActivity = async (taskId, userId, action, details = null) => {
@@ -1053,6 +1054,14 @@ exports.deleteTask = async (req, res) => {
         let column = null;
         if (task.columnId) {
             column = await Column.findById(task.columnId);
+        }
+
+        // Rule: a task can only be deleted while it is in the Todo column (checked on the current DB state)
+        if (!column || !isTodoColumnTitle(column.title)) {
+            return res.status(409).json({
+                message: 'Only tasks in the Todo column can be deleted.',
+                status: column ? column.title : null
+            });
         }
 
         await Promise.all([
