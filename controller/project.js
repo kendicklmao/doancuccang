@@ -6,6 +6,7 @@ const Comment = require('./../model/comment');
 const TaskActivity = require('./../model/activity');
 const Member = require('./../model/member');
 const Note = require('./../model/note');
+const { evaluateProjectWeeks, summarizeOnTime } = require('./../helper/onTimeRate');
 
 exports.getProject = async (req, res) => {
     try {
@@ -506,31 +507,30 @@ exports.Portfolio = async (req, res) => {
             }
         ]);
 
-        // 2. Tính toán tổng số lượng task và số lượng task đã hoàn thành (status: "done")
-        const taskStats = await Task.aggregate([
-            {
-                $group: {
-                    _id: null,
-                    totalTasks: { $sum: 1 },
-                    completedTasks: { $sum: { $cond: [{ $eq: ['$status', 'done'] }, 1, 0] } }
-                }
-            }
-        ]);
+        // 2. On-Time Rate: cùng quy tắc với Weekly Expectancy (Real >= Plan theo từng tuần đã diễn ra).
+        //    Task hoàn thành = nằm trong cột Done của project; ngày hoàn thành = completedDate || completedAt.
+        const doneTitle = /done|accepted|finish|hoàn thành/i;
+        const projects = await Project.find().select('_id startDate');
+        const now = new Date();
+        const perProject = [];
+        for (const project of projects) {
+            const [doneColumn, tasks] = await Promise.all([
+                Column.findOne({ projectId: project._id, $or: [{ position: 3 }, { title: doneTitle }, { name: doneTitle }] }).select('_id'),
+                Task.find({ projectId: project._id }).select('point week columnId createdAt completedAt completedDate'),
+            ]);
+            perProject.push(evaluateProjectWeeks(tasks, doneColumn ? String(doneColumn._id) : null, project.startDate, now));
+        }
+        const onTime = summarizeOnTime(perProject);
 
-        // GIẢI PHÁP AN TOÀN: Kiểm tra mảng tồn tại và có phần tử để tránh lỗi sập 500
         const pStats = (projectStats && projectStats.length > 0) ? projectStats[0] : { totalProjects: 0, totalBudget: 0 };
-        const tStats = (taskStats && taskStats.length > 0) ? taskStats[0] : { totalTasks: 0, completedTasks: 0 };
 
-        // Tính tỷ lệ % (Nếu hệ thống chưa có task nào thì mặc định hiển thị là 100%)
-        const onTimeRate = tStats.totalTasks > 0 
-            ? ((tStats.completedTasks / tStats.totalTasks) * 100).toFixed(1) 
-            : 100;
-
-        // Trả kết quả JSON sạch về cho ứng dụng React
         return res.status(200).json({
             totalProjects: pStats.totalProjects || 0,
             totalBudget: pStats.totalBudget || 0,
-            onTimeRate: parseFloat(onTimeRate)
+            // null = chưa có tuần nào đủ điều kiện để đánh giá (không phải 0%, không phải 100%)
+            onTimeRate: onTime.onTimeRate,
+            totalCompletedWeeks: onTime.totalCompletedWeeks,
+            totalOnTimeWeeks: onTime.totalOnTimeWeeks
         });
 
     } catch (error) {
