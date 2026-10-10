@@ -5,16 +5,16 @@ const controller = require('./../controller/task');
 const { verifyToken, checkRole } = require('../middleware/auth');
 
 // 1. Tạo task mới (Add Task): Chỉ dành cho Manager
-taskRouter.post('/', verifyToken, controller.createTask);
+taskRouter.post('/', verifyToken, checkRole(["Manager", "Leader"]),controller.createTask);
 
 // 2. Xóa task: Chỉ dành cho Manager
-taskRouter.delete('/:id', verifyToken, controller.deleteTask);
+taskRouter.delete('/:id', verifyToken,checkRole(["Manager"]) ,controller.deleteTask);
 
 // 3. Cập nhật task (VD: Chọn Assignee, sửa thông tin): Chỉ dành cho Leader
-taskRouter.put('/:id', verifyToken, controller.updateTask);
+taskRouter.put('/:id', verifyToken, checkRole(["Manager", "Leader"]),controller.updateTask);
 
 // 4. Di chuyển task (Push to Board / Kéo thả): Chỉ dành cho Leader
-taskRouter.put('/:id/move', verifyToken, controller.moveTask);
+taskRouter.put('/:id/move', verifyToken, checkRole(["Manager", "Leader", "Member"]),controller.moveTask);
 
 // ------------------- CÁC ROUTE XEM & TƯƠNG TÁC CHUNG (Member, Leader, Manager) -------------------
 
