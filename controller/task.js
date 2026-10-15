@@ -969,11 +969,7 @@ exports.getEpicBurndown = async (req, res) => {
     }
 };
 
-// Controller lấy điểm Expectancy theo tuần của dự án
-// Controller lấy điểm Expectancy & Real Progress tính theo ngày completedDate thực tế
-// Controller lấy điểm Expectancy & Real Progress theo tuần thời gian thực
-// Controller lấy điểm Expectancy & Real Progress theo yêu cầu
-// Controller lấy điểm Expectancy & Real Progress đúng số tuần của Project
+// Controller tính Real Progress cộng dồn cho tất cả task có completedDate
 exports.getWeeklyExpectancy = async (req, res) => {
     try {
         const { projectId } = req.params;
@@ -1003,9 +999,9 @@ exports.getWeeklyExpectancy = async (req, res) => {
             return res.status(200).json({ success: true, weeks: [] });
         }
 
-        // 3. Tìm ngày bắt đầu dự án & xác định WEEK LỚN NHẤT CÓ TRONG TASK
+        // 3. Tìm ngày bắt đầu dự án & Xác định week kế hoạch lớn nhất (maxProjectWeek)
         let minStartDate = null;
-        let maxProjectWeek = 1; // Tuần tối đa thực tế của Project này
+        let maxProjectWeek = 1;
 
         tasks.forEach(t => {
             if (t.createdAt) {
@@ -1015,7 +1011,6 @@ exports.getWeeklyExpectancy = async (req, res) => {
                 }
             }
 
-            // Lấy week lớn nhất được gán cho task trong project này
             const taskWeekNum = Number(t.week || 1);
             if (taskWeekNum > maxProjectWeek) {
                 maxProjectWeek = taskWeekNum;
@@ -1030,54 +1025,46 @@ exports.getWeeklyExpectancy = async (req, res) => {
         const diffInDays = Math.max(0, Math.floor(diffInMs / (1000 * 60 * 60 * 24)));
         const currentProjectWeek = Math.floor(diffInDays / 7) + 1;
 
-        // Helper tính week hoàn thành thực tế từ completedDate
-        const getCompletedWeekNumber = (completedDate) => {
-            if (!completedDate) return null;
-            const compTime = new Date(completedDate).getTime();
-            const elapsedMs = compTime - projectStartDate.getTime();
-            if (elapsedMs < 0) return 1;
-            const days = Math.floor(elapsedMs / (1000 * 60 * 60 * 24));
-            return Math.floor(days / 7) + 1;
+        // Helper: Lấy mốc thời gian kết thúc của một Tuần (Hết ngày thứ 7 của tuần đó)
+        const getWeekEndTimestamp = (weekNum) => {
+            const endDate = new Date(projectStartDate.getTime());
+            endDate.setDate(endDate.getDate() + (weekNum * 7));
+            return endDate.getTime();
         };
 
-        // 🟢 5. Khởi tạo map ĐÚNG SỐ TUẦN CỦA PROJECT (Tối đa = maxProjectWeek)
-        const weeklyMap = {};
-        for (let w = 1; w <= maxProjectWeek; w++) {
-            weeklyMap[w] = { expectancy: 0, realProgress: 0 };
-        }
-
-        // 6. Gom điểm
-        tasks.forEach(task => {
-            const taskPoint = Number(task.point || 0);
-
-            // A. PLAN PROGRESS
-            const planWeek = Number(task.week || 1);
-            if (weeklyMap[planWeek]) {
-                weeklyMap[planWeek].expectancy += taskPoint;
-            }
-
-            // B. REAL PROGRESS (Chỉ tính cho task Done có completedDate)
-            const isDone = doneColumnId && String(task.columnId) === doneColumnId;
-            const actualCompletedDate = task.completedDate || task.completedAt;
-
-            if (isDone && actualCompletedDate) {
-                const actualWeek = getCompletedWeekNumber(actualCompletedDate);
-                // Chỉ cộng nếu tuần đó nằm trong khoảng số tuần của Project
-                if (actualWeek && weeklyMap[actualWeek]) {
-                    weeklyMap[actualWeek].realProgress += taskPoint;
-                }
-            }
-        });
-
-        // 🟢 7. XUẤT DỮ LIỆU: Chỉ xuất từ Week 1 -> maxProjectWeek
+        // 🟢 5. TÍNH ĐIỂM PLAN CỘNG DỒN VÀ REAL PROGRESS CỘNG DỒN
         const weeksData = [];
+
         for (let w = 1; w <= maxProjectWeek; w++) {
+            const weekEndMs = getWeekEndTimestamp(w);
+
+            // A. PLAN PROGRESS (Cộng dồn kế hoạch từ Week 1 -> Week w)
+            const planPoints = tasks
+                .filter(t => Number(t.week || 1) <= w)
+                .reduce((sum, t) => sum + Number(t.point || 0), 0);
+
+            // B. REAL PROGRESS (Cộng dồn TẤT CẢ task đã Done có completedDate <= Mốc thời gian cuối của Week w)
+            let realPoints = null;
+
+            if (w <= currentProjectWeek) {
+                realPoints = tasks
+                    .filter(t => {
+                        const isDone = doneColumnId && String(t.columnId) === doneColumnId;
+                        const actualCompletedDate = t.completedDate || t.completedAt;
+
+                        if (!isDone || !actualCompletedDate) return false;
+
+                        // Nếu task có completedDate thực tế rơi vào trước hoặc trong Week w -> CỘNG VÀO
+                        return new Date(actualCompletedDate).getTime() <= weekEndMs;
+                    })
+                    .reduce((sum, t) => sum + Number(t.point || 0), 0);
+            }
+
             weeksData.push({
                 week: `Week ${w}`,
                 weekNumber: w,
-                expectancy: weeklyMap[w].expectancy,
-                // Nếu w > currentProjectWeek (chưa tới tuần đó) -> gán null để ngắt đường Real Progress
-                realProgress: w <= currentProjectWeek ? weeklyMap[w].realProgress : null
+                expectancy: planPoints,   // Plan dồn tích lũy
+                realProgress: realPoints   // Real Progress giữ nguyên & cộng dồn tích lũy
             });
         }
 
